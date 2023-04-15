@@ -4,6 +4,7 @@ import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Row
 import io.vertx.sqlclient.Tuple
 import io.vertx.core.Future
+import io.vertx.kotlin.coroutines.await
 import io.vertx.sqlclient.RowSet
 import io.vertx.sqlclient.impl.ArrayTuple
 import kotlin.reflect.*
@@ -17,121 +18,83 @@ abstract class BaseDao <T : Any, TKey : Any> {
     abstract val colSize : Int
     abstract val rowMap : Map<String,KProperty1<T,Any?>>
 
-    fun getElementByKey(connection : PgPool, key : TKey) : Future<T?>{
-        return connection
+    suspend fun getElementByKey(connection : PgPool, key : TKey) : T?{
+        val rows = connection
             .preparedQuery("SELECT * FROM %s WHERE %s = $1".format(tableName,keyName))
-            .execute(Tuple.of(key))
-            .compose(
-                fun(rows : RowSet<Row>) : Future<T?>{
-                    if (rows.size() == 0)
-                        return Future.succeededFuture<T?>(null)
-                    if (rows.size() >= 2)
-                        return Future.failedFuture<T?>("Duplicated primary key at %s\".format(keyName)")
-                    val row = rows.first()
-                    val result  = rowMapper(row)
-                    return Future.succeededFuture<T?>(result)
-                },
-                fun(exception : Throwable) : Future<T?> {
-                    return Future.failedFuture<T?>(exception);
-                }
-            )
+            .execute(Tuple.of(key)).await()
+
+        if (rows.size() == 0)
+            return null
+        if (rows.size() >= 2)
+            throw RuntimeException("Duplicated primary key %s at %s".format(key.toString(),keyName))
+        return rowMapper(rows.first())
     }
 
-    fun getAllElements(connection: PgPool) : Future<Map<TKey,T>?> {
-        return connection
+    private fun composeRows(rows : RowSet<Row>) : HashMap<TKey,T>?{
+        val result = HashMap<TKey,T>()
+
+        if (rows.size() == 0)
+            return null
+        for (row in rows){
+            val entity = rowMapper(row)
+            val key = primaryKey.get(entity)
+            if(key!=null)
+                result[key] = entity
+        }
+
+        return result
+    }
+
+    suspend fun getAllElements(connection: PgPool) : Map<TKey,T>? {
+        val rows = connection
             .query("SELECT * FROM %s".format(tableName))
-            .execute()
-            .compose(
-                fun(rows : RowSet<Row>) : Future<Map<TKey,T>?> {
-                    val res = HashMap<TKey,T>()
-                    if (rows.size() == 0)
-                        return Future.succeededFuture<Map<TKey,T>?>(null)
-                    rows.forEach {
-                        val entity = rowMapper(it)
-                        val key = primaryKey.get(entity)
-                        if(key!=null)
-                            res[key] = entity
-                    }
-                    return Future.succeededFuture<Map<TKey,T>?>(res)
-                },
-                fun(exception : Throwable) : Future<Map<TKey,T>?> {
-                    return Future.failedFuture<Map<TKey,T>?>(exception);
-                }
-            )
+            .execute().await()
+
+        return composeRows(rows)
     }
 
-    fun getElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) : Future<Map<TKey,T>?> {
-        return connection
+    suspend fun getElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) : Map<TKey,T>? {
+        val rows = connection
             .preparedQuery("SELECT * FROM %s WHERE %s".format(tableName,condClause))
-            .execute(Tuple.from(prepared))
-            .compose(
-                fun(rows : RowSet<Row>) : Future<Map<TKey,T>?> {
-                    val res = HashMap<TKey,T>()
-                    if (rows.size() == 0)
-                        return Future.succeededFuture<Map<TKey,T>?>(null)
-                    rows.forEach {
-                        val entity = rowMapper(it)
-                        val key = primaryKey.get(entity)
-                        if(key!=null)
-                            res[key] = entity
-                    }
-                    return Future.succeededFuture<Map<TKey,T>?>(res)
-                },
-                fun(exception : Throwable) : Future<Map<TKey,T>?> {
-                    return Future.failedFuture<Map<TKey,T>?>(exception);
-                }
-            )
+            .execute(Tuple.from(prepared)).await()
+
+        return composeRows(rows)
     }
 
-    fun insertElement(connection: PgPool, entity : T ) : Future<Nothing> {
-        var cols : String = "("
-        var vals : String = "("
+    private fun makeInsertClause(entity : T) : Triple<String,String,Tuple>{
+        val cols = StringBuilder("(")
+        val values = StringBuilder("(")
         var cnt = 1
         val prepared = ArrayTuple(1 + colSize)
         for(p in rowMap){
             if(p.value.get(entity) != null){
-                cols += p.key + ","
+                cols.append(p.key).append(",")
                 prepared.addValue(p.value.get(entity))
-                vals += "\$%d,".format(cnt++)
+                values.append("\$").append(cnt++).append(",")
             }
-
         }
-        cols = cols.substring(0,cols.length - 1)
-        vals = vals.substring(0,vals.length - 1)
-        cols += ')'
-        vals += ')'
+        cols.deleteAt(cols.length - 1).append(")")
+        values.deleteAt(values.length - 1).append(")")
+        return Triple(cols.substring(0),values.substring(0),prepared)
+    }
+    suspend fun insertElement(connection: PgPool, entity : T ){
+        val clause = makeInsertClause(entity)
 
-//        println("INSERT INTO %s %s VALUES %s".format(tableName,cols,vals))
-
-        return connection
-            .preparedQuery("INSERT INTO %s %s VALUES %s".format(tableName,cols,vals))
-            .execute(prepared)
-            .compose(
-                fun(rows : RowSet<Row>) : Future<Nothing>{
-                    return Future.succeededFuture()
-                },
-                fun(exception : Throwable) : Future<Nothing> {
-                    return Future.failedFuture<Nothing>(exception)
-                }
-            )
+        connection
+            .preparedQuery("INSERT INTO %s %s VALUES %s".format(tableName,clause.first,clause.second))
+            .execute(clause.third)
+            .await()
     }
 
-    fun deleteElementByKey(connection: PgPool, key : TKey ) : Future<Nothing> {
-        return connection
+    suspend fun deleteElementByKey(connection: PgPool, key : TKey ) {
+        connection
             .preparedQuery("DELETE FROM %s WHERE %s = $1".format(tableName, keyName))
             .execute(Tuple.of(key))
-            .compose(
-                fun(rows : RowSet<Row>) : Future<Nothing>{
-                    return Future.succeededFuture()
-                },
-                fun(exception : Throwable) : Future<Nothing> {
-                    return Future.failedFuture<Nothing>(exception);
-                }
-            )
+            .await()
     }
 
-    fun updateElementByConditions(connection: PgPool, condClause: String,  entity: T, vararg condPrepared : Any) : Future<Nothing> {
-        var updClause : StringBuilder = StringBuilder()
+    suspend fun updateElementByConditions(connection: PgPool, condClause: String,  entity: T, vararg condPrepared : Any){
+        val updClause : StringBuilder = StringBuilder()
 
         var cnt = 1
         val valPrepared = ArrayList<Any>()
@@ -149,19 +112,11 @@ abstract class BaseDao <T : Any, TKey : Any> {
             .format(tableName,updClause.substring(0,updClause.length-1),
                 condClause.format(*range)))
 
-        return connection
+        connection
             .preparedQuery("UPDATE %s SET %s WHERE %s"
                 .format(tableName,updClause.substring(0,updClause.length-1),
                     condClause.format(*range)))
             .execute(Tuple.from(valPrepared))
-            .compose(
-                fun(rows : RowSet<Row>) : Future<Nothing>{
-                    return Future.succeededFuture()
-                },
-                fun(exception : Throwable) : Future<Nothing> {
-                    return Future.failedFuture<Nothing>(exception);
-                }
-            )
-
+            .await()
     }
 }
