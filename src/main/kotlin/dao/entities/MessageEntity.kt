@@ -5,10 +5,10 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 data class MessageEntity(
-    var messageId : UUID?,
-    var messageType : String?,
-    var messageSource : Int?,
-    var messageDestination : Int?,
-    var arriveTime : OffsetDateTime?,
-    var sourceAddress : InetAddress?,
+    var messageId : UUID?= null,
+    var messageType : String?= null,
+    var messageSource : Int?= null,
+    var messageDestination : Int?= null,
+    var arriveTime : OffsetDateTime?= null,
+    var sourceAddress : InetAddress?= null,
 )

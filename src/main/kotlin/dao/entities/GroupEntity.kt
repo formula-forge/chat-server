@@ -5,14 +5,14 @@ import java.time.OffsetDateTime
 
 
 data class GroupEntity (
-    var groupId : Int?,
-    var groupName : String?,
-    var description : String?,
-    var memberCount : Short?,
-    var groupMembers : JsonArray?,
-    var groupAdmins : Array<String>?,
-    var registerTime : OffsetDateTime?,
-    var groupNotices : JsonArray?
+    var groupId : Int?= null,
+    var groupName : String?= null,
+    var description : String?= null,
+    var memberCount : Short?= null,
+    var groupMembers : JsonArray?= null,
+    var groupAdmins : Array<String>?= null,
+    var registerTime : OffsetDateTime?= null,
+    var groupNotices : JsonArray?= null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
