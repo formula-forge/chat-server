@@ -9,7 +9,7 @@ import io.vertx.sqlclient.impl.ArrayTuple
 import kotlin.reflect.*
 
 
-abstract class BaseDao <T : Any, TKey> {
+abstract class BaseDao <T : Any, TKey : Any> {
     abstract val tableName : String
     abstract fun rowMapper(row : Row) :  T
     abstract val keyName : String
@@ -60,9 +60,9 @@ abstract class BaseDao <T : Any, TKey> {
             )
     }
 
-    fun getElementsByConditions(connection: PgPool, conditionClause : String, vararg prepared : Any) : Future<Map<TKey,T>?> {
+    fun getElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) : Future<Map<TKey,T>?> {
         return connection
-            .preparedQuery("SELECT * FROM %s WHERE %s".format(tableName,conditionClause))
+            .preparedQuery("SELECT * FROM %s WHERE %s".format(tableName,condClause))
             .execute(Tuple.from(prepared))
             .compose(
                 fun(rows : RowSet<Row>) : Future<Map<TKey,T>?> {
@@ -101,7 +101,7 @@ abstract class BaseDao <T : Any, TKey> {
         cols += ')'
         vals += ')'
 
-        println("INSERT INTO %s %s VALUES %s".format(tableName,cols,vals))
+//        println("INSERT INTO %s %s VALUES %s".format(tableName,cols,vals))
 
         return connection
             .preparedQuery("INSERT INTO %s %s VALUES %s".format(tableName,cols,vals))
@@ -111,7 +111,7 @@ abstract class BaseDao <T : Any, TKey> {
                     return Future.succeededFuture()
                 },
                 fun(exception : Throwable) : Future<Nothing> {
-                    return Future.failedFuture<Nothing>(exception);
+                    return Future.failedFuture<Nothing>(exception)
                 }
             )
     }
@@ -130,4 +130,38 @@ abstract class BaseDao <T : Any, TKey> {
             )
     }
 
+    fun updateElementByConditions(connection: PgPool, condClause: String,  entity: T, vararg condPrepared : Any) : Future<Nothing> {
+        var updClause : StringBuilder = StringBuilder()
+
+        var cnt = 1
+        val valPrepared = ArrayList<Any>()
+
+        for(p in rowMap){
+            if(p.value.get(entity) != null){
+                updClause.append(p.key).append(" = \$").append(cnt++).append(",")
+                valPrepared.add(p.value.get(entity)!!)
+            }
+        }
+
+        valPrepared.addAll(condPrepared.toList())
+        val range : Array<Int> = IntRange(cnt,cnt + condPrepared.size).toList().toTypedArray()
+        println("UPDATE %s SET %s WHERE %s"
+            .format(tableName,updClause.substring(0,updClause.length-1),
+                condClause.format(*range)))
+
+        return connection
+            .preparedQuery("UPDATE %s SET %s WHERE %s"
+                .format(tableName,updClause.substring(0,updClause.length-1),
+                    condClause.format(*range)))
+            .execute(Tuple.from(valPrepared))
+            .compose(
+                fun(rows : RowSet<Row>) : Future<Nothing>{
+                    return Future.succeededFuture()
+                },
+                fun(exception : Throwable) : Future<Nothing> {
+                    return Future.failedFuture<Nothing>(exception);
+                }
+            )
+
+    }
 }
