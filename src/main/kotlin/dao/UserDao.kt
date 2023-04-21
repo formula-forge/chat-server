@@ -2,22 +2,21 @@ package dao
 
 import dao.entities.UserEntity
 import io.vertx.sqlclient.Row
-import kotlinx.datetime.LocalDateTime
-import kotlin.reflect.KCallable
 import kotlin.reflect.KProperty1
 
 class UserDao : BaseDao<UserEntity, Int>() {
     override val tableName: String = "users"
     override fun rowMapper(row: Row): UserEntity {
         return UserEntity(
-            userId = row.getInteger("userid"),
+            userId = row.getInteger("userId"),
             userName = row.getString("username"),
             userDetail = row.getJsonObject("detail"),
             friendList = row.getJsonArray("friendlist"),
             groupList = row.getJsonArray("grouplist"),
-            registerTime = row.getOffsetDateTime("register_time") ,
-            telephone = row.getString("telephone"),
-            passWord = row.getString("password")
+            phone = row.getString("phone"),
+            passWord = row.getString("password"),
+            avatar = row.getString("avatar"),
+            motto = row.getString("motto")
         )
     }
 
@@ -27,14 +26,15 @@ class UserDao : BaseDao<UserEntity, Int>() {
     override val rowMap: Map<String, KProperty1<UserEntity, Any?>>
         get(){
             val map = HashMap<String, KProperty1<UserEntity, Any?>>()
-            map["userid"] = UserEntity::userId
-            map["userName"] = UserEntity::userName
+            map["userId"] = UserEntity::userId
+            map["username"] = UserEntity::userName
             map["detail"] = UserEntity::userDetail
             map["friendlist"] = UserEntity::friendList
             map["grouplist"] = UserEntity::groupList
-            map["register_time"] = UserEntity::registerTime
-            map["telephone"] = UserEntity::telephone
+            map["phone"] = UserEntity::phone
             map["password"] = UserEntity::passWord
+            map["avatar"] = UserEntity::avatar
+            map["motto"] = UserEntity::motto
             return map
         }
 }
