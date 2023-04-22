@@ -1,11 +1,9 @@
 package verticle
 
 import io.vertx.core.http.HttpHeaders
-import io.vertx.ext.web.*
-import io.vertx.kotlin.core.http.*
-import io.vertx.kotlin.core.json.*
+import io.vertx.ext.web.Router
 import io.vertx.kotlin.coroutines.CoroutineVerticle
-import kotlinx.coroutines.*
+import kotlinx.coroutines.DelicateCoroutinesApi
 import services.Chat
 import services.User
 import utilities.AuthUtility

@@ -8,9 +8,7 @@ import io.vertx.kotlin.core.json.obj
 import utilities.AuthUtility
 import java.time.LocalDateTime
 import java.time.ZoneOffset
-import kotlin.collections.HashMap
 import kotlin.collections.set
-import kotlin.math.exp
 
 object Chat {
     private val authedUsers = HashMap<Int,ServerWebSocket>()

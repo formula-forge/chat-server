@@ -7,7 +7,7 @@ import io.vertx.core.http.Cookie
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
-import io.vertx.ext.web.*
+import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
 import io.vertx.pgclient.PgException
@@ -16,11 +16,9 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.mindrot.jbcrypt.BCrypt
 import utilities.AuthUtility
-
 import utilities.CheckUtility
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
-import java.lang.RuntimeException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 

@@ -1,13 +1,12 @@
 package dao
 
+import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Row
-import io.vertx.sqlclient.Tuple
-import io.vertx.core.Future
-import io.vertx.kotlin.coroutines.await
 import io.vertx.sqlclient.RowSet
+import io.vertx.sqlclient.Tuple
 import io.vertx.sqlclient.impl.ArrayTuple
-import kotlin.reflect.*
+import kotlin.reflect.KProperty1
 
 
 abstract class BaseDao <T : Any, TKey : Any> {
