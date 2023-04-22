@@ -22,7 +22,6 @@ abstract class BaseDao <T : Any, TKey : Any> {
         val rows = connection
             .preparedQuery("SELECT * FROM %s WHERE %s = $1".format(tableName,keyName))
             .execute(Tuple.of(key)).await()
-
         if (rows.size() == 0)
             return null
         if (rows.size() >= 2)
@@ -105,6 +104,9 @@ abstract class BaseDao <T : Any, TKey : Any> {
                 valPrepared.add(p.value.get(entity)!!)
             }
         }
+
+        if (valPrepared.isEmpty())
+            throw UnsupportedOperationException("No values to update")
 
         valPrepared.addAll(condPrepared.toList())
         val range : Array<Int> = IntRange(cnt,cnt + condPrepared.size).toList().toTypedArray()

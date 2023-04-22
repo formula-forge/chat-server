@@ -10,6 +10,7 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.collections.HashMap
 import kotlin.collections.set
+import kotlin.math.exp
 
 object Chat {
     private val authedUsers = HashMap<Int,ServerWebSocket>()
@@ -109,21 +110,18 @@ object Chat {
             responseError(400,"token无效",socket)
             return null
         }
-        val expire = try {
-            subject.getLong("expire")
-        }
-        catch (e : Exception){
+        val expire = subject.getLong("expire")
+        if(expire == null){
             responseError(400,"token无效",socket)
             return null
         }
+
         if (LocalDateTime.now() > LocalDateTime.ofEpochSecond(expire,0, ZoneOffset.ofHours(8))){
             responseError(400,"token已过期",socket)
             return null
         }
-        val userId = try {
-            subject.getInteger("userId")
-        }
-        catch (e : Exception){
+        val userId = subject.getInteger("userId")
+        if (userId == null){
             responseError(400,"token无效",socket)
             return null
         }

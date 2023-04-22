@@ -11,5 +11,6 @@ data class UserEntity(
     var passWord:String? = null,
     var phone:String? = null,
     var avatar:String? = null,
-    val motto: String?= null
+    var motto:String?= null,
+    var protected:Boolean? = null
 )
