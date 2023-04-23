@@ -7,7 +7,7 @@ import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.PoolOptions
 
 object ConnectionPool {
-    private var pool : PgPool? = null;
+    private var pool : PgPool? = null
     fun connect(connectOptions: PgConnectOptions =
                     PgConnectOptions()
                         .setPort(5432)
@@ -28,7 +28,7 @@ object ConnectionPool {
             throw Exception("Failed to connect the database.")
         }
         else{
-            return pool!!;
+            return pool!!
         }
     }
 }

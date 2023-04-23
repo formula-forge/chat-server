@@ -10,6 +10,7 @@ import io.vertx.ext.web.RoutingContext
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
 import utilities.AuthUtility
 import utilities.ServerUtility
 
@@ -27,8 +28,10 @@ object Friend {
                     val subject = AuthUtility.verifyToken(token.value)!!
                     val me = subject.getInteger("userId")!!
 
+                    val classification = routingContext.request().getParam("class")
+
                     //获取好友列表
-                    val friends = try {
+                    var friends = try {
                         frienddao.listFriends(ConnectionPool.getPool(), me)
                     }
                     catch (e : Exception){
@@ -37,8 +40,12 @@ object Friend {
                         return@launch
                     }
 
+                    if (classification != null){
+                        friends = friends.filter { friend->friend.classification == classification }
+                    }
+
                     //返回
-                    ServerUtility.responseSuccess(routingContext, 200, JsonObject().put("friends", friends))
+                    ServerUtility.responseSuccess(routingContext, 200, JsonObject().put("entries", friends).put("size", friends.size))
                 }
                 catch (e : Exception){
                     ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)

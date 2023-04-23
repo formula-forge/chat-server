@@ -2,7 +2,9 @@ package verticle
 
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.HttpHeaders
+import io.vertx.core.http.HttpMethod
 import io.vertx.ext.web.Router
+import io.vertx.ext.web.handler.CorsHandler
 import io.vertx.kotlin.coroutines.CoroutineVerticle
 import kotlinx.coroutines.DelicateCoroutinesApi
 import services.Chat
@@ -21,6 +23,20 @@ class MainVerticle : CoroutineVerticle() {
         val server = vertx.createHttpServer()
 
         val mainRouter =  Router.router(vertx)
+
+        mainRouter.route().order(-3).handler(
+            CorsHandler.create("*")
+                .allowedMethod(HttpMethod.GET)
+                .allowedMethod(HttpMethod.POST)
+                .allowedMethod(HttpMethod.DELETE)
+                .allowedMethod(HttpMethod.PATCH)
+                .allowedMethod(HttpMethod.PUT)
+                .allowedHeader("Cookie")
+                .allowedHeader("X-PINGARUNER")
+                .allowedHeader("Content-Type")
+                .allowCredentials(true)
+                .allowedHeader("Access-Control-Allow-Origin")
+        )
 
         mainRouter.get("/img/default.png").order(-2).handler{
             val resource = this.javaClass.getResourceAsStream("/img/default.png").buffered()
@@ -88,11 +104,11 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.patch("/api/friends/:id").order(12).handler(Friend.updFriend)
 
         mainRouter.get("/api/session").order(13).handler(Session.getSessionList)
-        mainRouter.get("/api/session/:id").order(14).handler(Session.getUserMessage)
+        mainRouter.get("/api/session/user/:id").order(14).handler(Session.getUserMessage)
 
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)
-        server.listen(8088,"0.0.0.0")
+        server.listen(8080,"0.0.0.0")
     }
 }

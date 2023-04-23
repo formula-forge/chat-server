@@ -5,6 +5,7 @@ import dao.FriendDao
 import dao.UserDao
 import dao.entities.UserEntity
 import io.vertx.core.http.Cookie
+import io.vertx.core.http.CookieSameSite
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
@@ -413,7 +414,7 @@ object User {
                                     )
                                 }
                             )
-                            routingContext.response().addCookie(Cookie.cookie("token",token).setHttpOnly(true).setPath("/").setMaxAge(60*60*24*30))
+                            routingContext.response().addCookie(Cookie.cookie("token",token).setHttpOnly(false).setPath("/").setMaxAge(60*60*24*30).setSameSite(CookieSameSite.NONE).setSecure(true))
 
                             responseSuccess(
                                 routingContext,
@@ -450,7 +451,7 @@ object User {
     //登出 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val logout = fun(routingContext: RoutingContext){
-        routingContext.response().removeCookie("token").setPath("/")
+        routingContext.response().removeCookie("token").setPath("/").setSameSite(CookieSameSite.NONE).setSecure(true)
         routingContext.response().end(
             json { obj("status" to 200, "message" to "OK") }.encode()
         )

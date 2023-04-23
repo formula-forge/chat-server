@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 import utilities.AuthUtility
 import utilities.ServerUtility
 import utilities.TimeUtility
-import java.time.ZoneOffset
 
 object Session {
     private val sessiondao = SessionDao()
@@ -39,10 +38,20 @@ object Session {
                     return@launch
                 }
 
-                val ret_sessions = JsonArray()
-                var tot_unread = 0
+                if (sessions == null){
+                    ServerUtility.responseSuccess(routingContext, 200, json {
+                        obj(
+                            "sessions" to JsonArray(),
+                            "unread" to 0
+                        )
+                    })
+                    return@launch
+                }
 
                 try {
+                    val retSessions = JsonArray()
+                    var totUnread = 0
+
                     sessions?.forEach { session ->
                         if(session.group!!){
                             //群聊
@@ -58,7 +67,7 @@ object Session {
                                 return@launch
                             }
 
-                            ret_sessions.add(
+                            retSessions.add(
                                 json {
                                     obj (
                                         "type" to "user",
@@ -72,7 +81,15 @@ object Session {
                                 }
                             )
 
-                            tot_unread += session.unread!!
+                            totUnread += session.unread!!
+
+                            // 返回
+                            ServerUtility.responseSuccess(routingContext, 200, json {
+                                obj(
+                                    "sessions" to retSessions,
+                                    "unread" to totUnread
+                                )
+                            })
                         }
                     }
                 }
@@ -81,14 +98,6 @@ object Session {
                     e.printStackTrace()
                     return@launch
                 }
-
-                // 返回
-                ServerUtility.responseSuccess(routingContext, 200, json {
-                    obj(
-                        "sessions" to ret_sessions,
-                        "unread" to tot_unread
-                    )
-                })
 
             }
             catch (e : Exception){
