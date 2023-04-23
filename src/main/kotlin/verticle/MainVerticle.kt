@@ -1,13 +1,17 @@
 package verticle
 
+import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.HttpHeaders
 import io.vertx.ext.web.Router
 import io.vertx.kotlin.coroutines.CoroutineVerticle
 import kotlinx.coroutines.DelicateCoroutinesApi
 import services.Chat
+import services.Friend
+import services.Session
 import services.User
 import utilities.AuthUtility
 import utilities.ServerUtility
+import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -17,6 +21,14 @@ class MainVerticle : CoroutineVerticle() {
         val server = vertx.createHttpServer()
 
         val mainRouter =  Router.router(vertx)
+
+        mainRouter.get("/img/default.png").order(-2).handler{
+            val resource = this.javaClass.getResourceAsStream("/img/default.png").buffered()
+            it.response().putHeader(HttpHeaders.CONTENT_TYPE,"image/png")
+            it.response().end(
+                Buffer.buffer(resource.readBytes())
+            )
+        }
 
         mainRouter.post("/api/hello").order(-1).handler {
             it.response().end("Hello World!")
@@ -66,9 +78,17 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/user/:id").order(4).handler(User.getUser)
         mainRouter.get("/api/user").order(5).handler(User.getUser)
         mainRouter.delete("/api/user/:id").order(6).handler(User.delUser)
-        mainRouter.patch("/api/user/:id").order(8).handler(User.updUser)
+        mainRouter.patch("/api/user/:id").order(7).handler(User.updUser)
 
-        mainRouter.delete("/api/token").order(7).handler(User.logout)
+        mainRouter.delete("/api/token").order(8).handler(User.logout)
+
+        mainRouter.get("/api/friends").order(9).handler(Friend.getFriends)
+        mainRouter.post("/api/friends").order(10).handler(Friend.addFriend)
+        mainRouter.delete("/api/friends/:id").order(11).handler(Friend.delFriend)
+        mainRouter.patch("/api/friends/:id").order(12).handler(Friend.updFriend)
+
+        mainRouter.get("/api/session").order(13).handler(Session.getSessionList)
+        mainRouter.get("/api/session/:id").order(14).handler(Session.getUserMessage)
 
         server.webSocketHandler(Chat.wsHandler)
 

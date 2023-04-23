@@ -1,13 +1,14 @@
 package services
 
 import dao.ConnectionPool
+import dao.FriendDao
 import dao.UserDao
 import dao.entities.UserEntity
 import io.vertx.core.http.Cookie
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
-import io.vertx.ext.web.RoutingContext
+import io.vertx.ext.web.*
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
 import io.vertx.pgclient.PgException
@@ -16,15 +17,18 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.mindrot.jbcrypt.BCrypt
 import utilities.AuthUtility
+
 import utilities.CheckUtility
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
+import java.lang.RuntimeException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
 // 用户服务类
 object User {
     val userdao = UserDao()
+    val frienddao = FriendDao()
     //新增用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val addUser = fun(routingContext: RoutingContext){
@@ -191,16 +195,12 @@ object User {
                 }
                 //如果不是自己
                 else {
-                    user.friendList?.forEach { fr ->
-                        val friend_obj = try {
-                            fr as JsonObject
-                        } catch (e: ClassCastException) {
-                            responseError(routingContext, 500, 1, "好友列表异常")
-                            return@launch
-                        }
-                        if (friend_obj.getInteger("id") == me) {
-                            friend = true
-                        }
+                    friend = try {
+                        frienddao.checkFriendShip(ConnectionPool.getPool(),me,userId)
+                    }
+                    catch (e : Exception){
+                        responseError(routingContext,500,30,"数据库错误")
+                        return@launch
                     }
                 }
 
@@ -295,7 +295,8 @@ object User {
                             return@launch
                         }
                         catch (e : Exception){
-                            if (e.message!!.contains("duplicate key"))
+                            if (e.message!=null
+                                && e.message!!.contains("duplicate key"))
                                 responseError(routingContext,400,5,"用户名已存在")
                             else
                                 responseError(routingContext,500,30,"数据库错误" + e.message)

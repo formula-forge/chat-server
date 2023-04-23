@@ -18,14 +18,20 @@ object ServerUtility {
         )
     }
 
-    fun responseSuccess(context: RoutingContext ,status : Int, data: JsonObject) {
+    fun responseSuccess(context: RoutingContext ,status : Int, data: JsonObject? = null) {
+        val res = json {
+            obj(
+                "status" to status,
+                "message" to "OK"
+            )
+        }
+
+        if (data!=null){
+            res.mergeIn(data)
+        }
+
         context.response().setStatusCode(status).end(
-            json {
-                obj(
-                    "status" to status,
-                    "message" to "OK"
-                )
-            }.mergeIn(data).encode()
+            res.encode()
         )
     }
 }

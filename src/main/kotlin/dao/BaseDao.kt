@@ -17,9 +17,9 @@ abstract class BaseDao <T : Any, TKey : Any> {
     abstract val colSize : Int
     abstract val rowMap : Map<String,KProperty1<T,Any?>>
 
-    suspend fun getElementByKey(connection : PgPool, key : TKey) : T?{
+    open suspend fun getElementByKey(connection : PgPool, key : TKey) : T?{
         val rows = connection
-            .preparedQuery("SELECT * FROM %s WHERE %s = $1".format(tableName,keyName))
+            .preparedQuery("SELECT * FROM %s WHERE %s = \$1".format(tableName,keyName))
             .execute(Tuple.of(key)).await()
         if (rows.size() == 0)
             return null
@@ -51,7 +51,7 @@ abstract class BaseDao <T : Any, TKey : Any> {
         return composeRows(rows)
     }
 
-    suspend fun getElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) : Map<TKey,T>? {
+    open suspend fun getElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) : Map<TKey,T>? {
         val rows = connection
             .preparedQuery("SELECT * FROM %s WHERE %s".format(tableName,condClause))
             .execute(Tuple.from(prepared)).await()
@@ -84,9 +84,9 @@ abstract class BaseDao <T : Any, TKey : Any> {
             .await()
     }
 
-    suspend fun deleteElementByKey(connection: PgPool, key : TKey ) {
+    open suspend fun deleteElementByKey(connection: PgPool, key : TKey ) {
         connection
-            .preparedQuery("DELETE FROM %s WHERE %s = $1".format(tableName, keyName))
+            .preparedQuery("DELETE FROM %s WHERE %s = \$1".format(tableName, keyName))
             .execute(Tuple.of(key))
             .await()
     }

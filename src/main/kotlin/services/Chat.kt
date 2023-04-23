@@ -1,26 +1,105 @@
 package services
 
+import dao.ConnectionPool
+import dao.MessageDao
+import dao.SessionDao
+import dao.UserDao
+import dao.entities.MessageEntity
+import dao.entities.SessionEntity
 import io.vertx.core.http.ServerWebSocket
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import utilities.AuthUtility
 import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import kotlin.collections.set
 
 object Chat {
     private val authedUsers = HashMap<Int,ServerWebSocket>()
+    private val messageDao = MessageDao()
+    private val sessionDao = SessionDao()
     private fun responseError(code : Int, msg : String, socket : ServerWebSocket){
-        socket.writeTextMessage(json {
-            obj (
-                "code" to code,
-                "msg" to msg,
-            )
-        }.encode())
+        try {
+            socket.writeTextMessage(json {
+                obj (
+                    "code" to code,
+                    "msg" to msg,
+                )
+            }.encode())
+        }
+        catch (e : Exception){
+            e.printStackTrace()
+        }
     }
 
+    private suspend fun storeMessage(messageEntity: MessageEntity){
+        try {
+            messageDao.insertElement(ConnectionPool.getPool(), messageEntity)
+            var session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.sender!!, messageEntity.receiver!!)
+            if(session == null){
+                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                    userId = messageEntity.sender,
+                    target = messageEntity.receiver,
+                    unread = null,
+                    group = null,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content
+                )
+                )
+            }
+            else{
+                sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d" ,SessionEntity(
+                    userId = messageEntity.sender,
+                    target = messageEntity.receiver,
+                    unread = null,
+                    group = null,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content
+                ),
+                    messageEntity.sender!!,
+                    messageEntity.receiver!!
+                )
+            }
+
+            session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.receiver!!, messageEntity.sender!!)
+            if(session == null){
+                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                    userId = messageEntity.receiver,
+                    target = messageEntity.sender,
+                    unread = 1,
+                    group = null,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content
+                )
+                )
+            }
+            else{
+                sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d" ,SessionEntity(
+                    userId = messageEntity.receiver,
+                    target = messageEntity.sender,
+                    unread = session.unread!! + 1,
+                    group = null,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content
+                ),
+                    messageEntity.receiver!!,
+                    messageEntity.sender!!
+                )
+            }
+        }
+        catch (e : Exception){
+            e.printStackTrace()
+            throw Exception("数据库错误")
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
     private fun relayMessage(req: JsonObject, socket: ServerWebSocket, id: Int?){
         if (!authedUsers.containsValue(socket)){
             responseError(400,"请先验证身份",socket)
@@ -59,11 +138,24 @@ object Chat {
             return
         }
 
-
+        GlobalScope.launch {
+            try {
+                storeMessage(MessageEntity(
+                    sender = id,
+                    receiver = target,
+                    type = "text",
+                    time = LocalDateTime.ofEpochSecond(timestamp/1000,(timestamp % 1000).toInt() * 1000000, ZoneOffset.ofHours(8)),
+                    content = content
+                ))
+            }
+            catch (e : Exception){
+                responseError(500,"服务器错误",socket)
+            }
+        }
 
         val targetSocket = authedUsers[target]
         if (targetSocket == null || targetSocket.isClosed){
-            responseError(400,"目标用户不在线",socket)
+            responseError(202,"目标用户不在线，消息转存",socket)
             return
         }
 
