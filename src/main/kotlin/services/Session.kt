@@ -4,6 +4,7 @@ import dao.ConnectionPool
 import dao.MessageDao
 import dao.SessionDao
 import dao.UserDao
+import dao.entities.SessionEntity
 import io.vertx.core.json.JsonArray
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
@@ -52,16 +53,14 @@ object Session {
                     val retSessions = JsonArray()
                     var totUnread = 0
 
-                    sessions?.forEach { session ->
+                    sessions.forEach { session ->
                         if(session.group!!){
                             //群聊
-                        }
-                        else{
+                        } else{
                             //私聊
                             val user = try {
                                 userdao.getElementByKey(ConnectionPool.getPool(), session.target!!)
-                            }
-                            catch (e : Exception){
+                            } catch (e : Exception){
                                 ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
                                 e.printStackTrace()
                                 return@launch
@@ -72,8 +71,6 @@ object Session {
                                     obj (
                                         "type" to "user",
                                         "id" to user?.userId,
-                                        "name" to user?.userName,
-                                        "avatar" to user?.avatar,
                                         "latest" to session.latest_msg,
                                         "time" to TimeUtility.parseTimeStamp(session.latest!!),
                                         "unread" to session.unread
@@ -82,16 +79,15 @@ object Session {
                             )
 
                             totUnread += session.unread!!
-
-                            // 返回
-                            ServerUtility.responseSuccess(routingContext, 200, json {
-                                obj(
-                                    "sessions" to retSessions,
-                                    "unread" to totUnread
-                                )
-                            })
                         }
                     }
+                    // 返回
+                    ServerUtility.responseSuccess(routingContext, 200, json {
+                        obj(
+                            "sessions" to retSessions,
+                            "unread" to totUnread
+                        )
+                    })
                 }
                 catch (e : Exception){
                     ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
@@ -149,7 +145,7 @@ object Session {
                                 "content" to message.content,
                                 "timestamp" to TimeUtility.parseTimeStamp(message.time!!),
                                 "type" to message.type,
-                                "avatar" to if (message.sender == me) meUser?.avatar else targetUser?.avatar
+                                "group" to message.group
                             )
                         }
                     )
@@ -161,6 +157,119 @@ object Session {
                         "count" to count
                     )
                 })
+
+            }
+            catch (e : Exception){
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                e.printStackTrace()
+            }
+        }
+    }
+
+    //标记已读
+    @OptIn(DelicateCoroutinesApi::class)
+    val markSession = fun(routingContext : RoutingContext){
+        GlobalScope.launch {
+            try {
+                //验证token
+                val token = routingContext.request().getCookie("token")!!
+                val subject = AuthUtility.verifyToken(token.value)!!
+                val me = subject.getInteger("userId")!!
+
+                val type = try {
+                    routingContext.pathParam("type")!!
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                if (type != "user" && type != "group"){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    return@launch
+                }
+
+                val target = try {
+                    routingContext.pathParam("id")!!.toInt()
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                try {
+                    sessiondao.updateElementByConditions(
+                        ConnectionPool.getPool(),
+                        "id = \$%d AND target = \$%d AND \"group\" = \$%d",
+                        SessionEntity(
+                            unread = 0
+                        ),
+                        me,target,type == "group"
+                    )
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                ServerUtility.responseSuccess(routingContext, 200)
+            }
+            catch (e : Exception){
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                e.printStackTrace()
+            }
+        }
+    }
+
+    //删除会话
+    @OptIn(DelicateCoroutinesApi::class)
+    val delMessage = fun(routingContext : RoutingContext){
+        GlobalScope.launch {
+            try {
+                //验证token
+                val token = routingContext.request().getCookie("token")!!
+                val subject = AuthUtility.verifyToken(token.value)!!
+                val me = subject.getInteger("userId")!!
+
+                val type = try {
+                    routingContext.pathParam("type")!!
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                if (type != "user" && type != "group"){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    return@launch
+                }
+
+                val target = try {
+                    routingContext.pathParam("id")!!.toInt()
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                try {
+                    sessiondao.deleteElementsByConditions(
+                        ConnectionPool.getPool(),
+                        "id = \$1 AND target = \$2 AND \"group\" = \$3",
+                        me,target,type == "group"
+                    )
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+                ServerUtility.responseSuccess(routingContext, 200)
 
             }
             catch (e : Exception){

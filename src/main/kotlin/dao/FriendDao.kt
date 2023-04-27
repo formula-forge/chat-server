@@ -48,9 +48,10 @@ class FriendDao{
         return result
     }
 
-    suspend fun addFriend(connection : PgPool, user : Int, friend : Int, classification : String? = null, nickname : String? = null) {
+    suspend fun addFriend(connection : PgPool, user : Int, friend : Int, classification : String? = null,
+                          nickname : String? = null, reClass : String? = null, reNickname : String? = null) {
         var sql = "INSERT INTO friend (master, slave) VALUES ($1, $2)"
-        val tuple = Tuple.of(user, friend)
+        var tuple = Tuple.of(user, friend)
         if (classification == null && nickname != null){
             sql = "INSERT INTO friend (master, slave, nickname) VALUES ($1, $2, $3)"
             tuple.addValue(nickname)
@@ -71,9 +72,26 @@ class FriendDao{
             .preparedQuery(sql)
             .execute(tuple).await()
 
+        tuple = Tuple.of(friend, user)
+        if (reClass == null && reNickname != null){
+            sql = "INSERT INTO friend (master, slave, nickname) VALUES ($1, $2, $3)"
+            tuple.addValue(reNickname)
+        }
+
+        else if (reClass != null && reNickname == null) {
+            sql = "INSERT INTO friend (master, slave, classification) VALUES ($1, $2, $3)"
+            tuple.addValue(reClass)
+        }
+
+        else if (reClass != null && reNickname != null) {
+            sql = "INSERT INTO friend (master, slave, classification, nickname) VALUES ($1, $2, $3, $4)"
+            tuple.addValue(reClass)
+            tuple.addValue(reNickname)
+        }
+
         connection
-            .preparedQuery("INSERT INTO friend (master, slave) VALUES ($1, $2)")
-            .execute(Tuple.of(friend, user)).await()
+            .preparedQuery(sql)
+            .execute(tuple).await()
     }
 
     suspend fun delFriend(connection: PgPool, user: Int, friend: Int){

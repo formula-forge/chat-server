@@ -11,7 +11,7 @@ import kotlin.reflect.KProperty1
 
 class SessionDao : BaseDao<SessionEntity, Int>() {
     override val tableName: String = "session"
-    override val keyName: String = "id"
+    override val keyName: String = "target"
     override val colSize: Int = 6
     override val primaryKey = SessionEntity::userId
 

@@ -102,9 +102,13 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.post("/api/friends").order(10).handler(Friend.addFriend)
         mainRouter.delete("/api/friends/:id").order(11).handler(Friend.delFriend)
         mainRouter.patch("/api/friends/:id").order(12).handler(Friend.updFriend)
+        mainRouter.post("/api/friends/application").order(13).handler(Friend.applyFriend)
+        mainRouter.get("/api/friends/application").order(14).handler(Friend.listFriendApp)
 
-        mainRouter.get("/api/session").order(13).handler(Session.getSessionList)
-        mainRouter.get("/api/session/user/:id").order(14).handler(Session.getUserMessage)
+        mainRouter.get("/api/session").order(15).handler(Session.getSessionList)
+        mainRouter.get("/api/session/user/:id").order(16).handler(Session.getUserMessage)
+        mainRouter.patch("/api/session/:type/:id").order(17).handler(Session.markSession)
+        mainRouter.delete("/api/session/:type/:id").order(18).handler(Session.delMessage)
 
         server.webSocketHandler(Chat.wsHandler)
 

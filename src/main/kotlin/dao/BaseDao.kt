@@ -19,7 +19,7 @@ abstract class BaseDao <T : Any, TKey : Any> {
 
     open suspend fun getElementByKey(connection : PgPool, key : TKey) : T?{
         val rows = connection
-            .preparedQuery("SELECT * FROM %s WHERE %s = \$1".format(tableName,keyName))
+            .preparedQuery("SELECT * FROM %s WHERE \"%s\" = \$1".format(tableName,keyName))
             .execute(Tuple.of(key)).await()
         if (rows.size() == 0)
             return null
@@ -88,6 +88,13 @@ abstract class BaseDao <T : Any, TKey : Any> {
         connection
             .preparedQuery("DELETE FROM %s WHERE %s = \$1".format(tableName, keyName))
             .execute(Tuple.of(key))
+            .await()
+    }
+
+    suspend fun deleteElementsByConditions(connection: PgPool, condClause : String, vararg prepared : Any) {
+        connection
+            .preparedQuery("DELETE FROM %s WHERE %s".format(tableName,condClause))
+            .execute(Tuple.from(prepared))
             .await()
     }
 
