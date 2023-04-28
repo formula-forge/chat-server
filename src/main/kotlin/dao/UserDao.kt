@@ -15,7 +15,8 @@ class UserDao : BaseDao<UserEntity, Int>() {
             passWord = row.getString("password"),
             avatar = row.getString("avatar"),
             motto = row.getString("motto"),
-            protected = row.getBoolean("protected")
+            protected = row.getBoolean("protected"),
+            favFormula = row.getJsonObject("fav_formula")
         )
     }
 
@@ -33,6 +34,7 @@ class UserDao : BaseDao<UserEntity, Int>() {
             map["avatar"] = UserEntity::avatar
             map["motto"] = UserEntity::motto
             map["protected"] = UserEntity::protected
+            map["fav_formula"] = UserEntity::favFormula
             return map
         }
 }

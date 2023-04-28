@@ -23,8 +23,6 @@ import java.lang.NumberFormatException
 import java.time.LocalDate
 import java.util.ServiceConfigurationError
 
-
-
 object Friend {
     private const val TYPE_POSTED = "posted"
 
@@ -197,15 +195,19 @@ object Friend {
                     var reClass: String? = null
                     var reNickname: String? = null
 
-                    if (friendUser.protected!!){
-                        val appId = try{
-                            req["application"] as Int
-                        }
-                        catch (e : Exception){
-                            ServerUtility.responseError(routingContext, 400, 1, "需要提供申请id")
-                            return@launch
-                        }
+                    val appId: Int? = try { req["application"] as Int? }
+                    catch (e : Exception){
+                        e.printStackTrace()
+                        null
+                    }
 
+                    if(friendUser.protected!! && appId ==null){
+                        ServerUtility.responseError(routingContext, 400, 1, "需要提供申请id")
+                        return@launch
+                    }
+
+                    if (appId != null){
+                        //获取申请
                         val app = try {
                             friendAppDao.getElementByKey(ConnectionPool.getPool(), appId)!!
                         }

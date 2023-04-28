@@ -110,6 +110,11 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.patch("/api/session/:type/:id").order(17).handler(Session.markSession)
         mainRouter.delete("/api/session/:type/:id").order(18).handler(Session.delMessage)
 
+        mainRouter.get("/api/history").order(19).handler(Session.getHistory)
+
+        mainRouter.get("/api/formula").order(20).handler(User.getFavFormula)
+        mainRouter.put("/api/formula").order(21).handler(User.updateFavFormula)
+
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)

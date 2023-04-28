@@ -20,6 +20,7 @@ import org.mindrot.jbcrypt.BCrypt
 import utilities.AuthUtility
 
 import utilities.CheckUtility
+import utilities.ServerUtility
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
 import java.lang.RuntimeException
@@ -367,6 +368,78 @@ object User {
                 responseError(routingContext, 400, 1, "参数不合法")
             } catch (e: Exception) {
                 responseError(routingContext, 500, 30, "服务器错误" + e.printStackTrace())
+            }
+        }
+    }
+
+    //获取收藏公式
+    @OptIn(DelicateCoroutinesApi::class)
+    val getFavFormula = fun(routingContext : RoutingContext) {
+        GlobalScope.launch {
+            // 验证token
+            val token = routingContext.request().getCookie("token")!!
+            val subject = AuthUtility.verifyToken(token.value)!!
+            val me = subject.getInteger("userId")!!
+
+            // 获取收藏公式
+            try {
+                val user = userdao.getElementByKey(ConnectionPool.getPool(),me)
+                val fav = user!!.favFormula
+                ServerUtility.responseSuccess(routingContext,200, json { obj("formula" to fav) })
+            }
+            catch (e : NullPointerException) {
+                ServerUtility.responseError(routingContext,404,4,"用户不存在")
+                return@launch
+            }
+            catch (e : PgException) {
+                ServerUtility.responseError(routingContext,500,30,"数据库错误" + e.message)
+                e.printStackTrace()
+                return@launch
+            }
+            catch (e : Exception) {
+                ServerUtility.responseError(routingContext,500,30,"服务器错误")
+                e.printStackTrace()
+                return@launch
+            }
+
+        }
+    }
+
+    //更新收藏公式
+    @OptIn(DelicateCoroutinesApi::class)
+    val updateFavFormula = fun(routingContext : RoutingContext) {
+        routingContext.request().bodyHandler { buff ->
+            GlobalScope.launch {
+                // 验证token
+                val token = routingContext.request().getCookie("token")!!
+                val subject = AuthUtility.verifyToken(token.value)!!
+                val me = subject.getInteger("userId")!!
+
+                // 获取收藏公式
+                try {
+                    userdao.updateElementByConditions(
+                        ConnectionPool.getPool(),
+                        "id=\$%d",
+                        UserEntity(favFormula = buff.toJsonObject()),
+                        me
+                    )
+                    ServerUtility.responseSuccess(routingContext,200)
+                }
+                catch (e : NullPointerException) {
+                    ServerUtility.responseError(routingContext,404,4,"用户不存在")
+                    return@launch
+                }
+                catch (e : PgException) {
+                    ServerUtility.responseError(routingContext,500,30,"数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+                catch (e : Exception) {
+                    ServerUtility.responseError(routingContext,500,30,"服务器错误")
+                    e.printStackTrace()
+                    return@launch
+                }
+
             }
         }
     }
