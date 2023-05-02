@@ -6,6 +6,7 @@ import io.vertx.sqlclient.Row
 import io.vertx.sqlclient.RowSet
 import io.vertx.sqlclient.Tuple
 import io.vertx.sqlclient.impl.ArrayTuple
+import java.awt.RenderingHints.Key
 import kotlin.reflect.KProperty1
 
 
@@ -75,13 +76,15 @@ abstract class BaseDao <T : Any, TKey : Any> {
         values.deleteAt(values.length - 1).append(")")
         return Triple(cols.substring(0),values.substring(0),prepared)
     }
-    suspend fun insertElement(connection: PgPool, entity : T ){
+    suspend fun insertElement(connection: PgPool, entity : T ) : TKey{
         val clause = makeInsertClause(entity)
 
-        connection
-            .preparedQuery("INSERT INTO %s %s VALUES %s".format(tableName,clause.first,clause.second))
+        val result = connection
+            .preparedQuery("INSERT INTO %s %s VALUES %s RETURNING %s".format(tableName,clause.first,clause.second,keyName))
             .execute(clause.third)
             .await()
+
+        return result.first().getValue(keyName) as TKey
     }
 
     open suspend fun deleteElementByKey(connection: PgPool, key : TKey ) {

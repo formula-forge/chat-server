@@ -1,7 +1,12 @@
 package dao
 
 import dao.entities.UserEntity
+import io.vertx.ext.auth.User
+import io.vertx.kotlin.coroutines.await
+import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Row
+import io.vertx.sqlclient.Tuple
+import javax.swing.tree.RowMapper
 import kotlin.reflect.KProperty1
 
 class UserDao : BaseDao<UserEntity, Int>() {
@@ -36,5 +41,21 @@ class UserDao : BaseDao<UserEntity, Int>() {
             map["protected"] = UserEntity::protected
             map["fav_formula"] = UserEntity::favFormula
             return map
+       }
+
+    suspend fun getUsersById(connection: PgPool, id: List<Int>): Map<Int,UserEntity> {
+        val rows = connection
+            .preparedQuery("SELECT * FROM %s WHERE %s = $1".format(tableName, keyName))
+            .executeBatch(id.map { Tuple.of(it) }).await()
+
+        val ret = HashMap<Int, UserEntity>()
+
+        rows?.forEach{ row ->
+            val user = rowMapper(row)
+
+            ret[user.userId!!] = user
         }
+
+        return ret
+    }
 }

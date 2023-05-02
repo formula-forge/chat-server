@@ -93,7 +93,7 @@ object Friend {
 
                     //获取好友id
                     val friendId = try {
-                        req["userId"] as Int
+                        req["receiver"] as Int
                     }
                     catch (e: ClassCastException){
                         ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id")
@@ -126,7 +126,7 @@ object Friend {
                         ServerUtility.responseSuccess(routingContext, 200)
                     }
                     catch (e : PgException){
-                        if (e.message != null && e.message!!.contains("lates foreign key constraint")){
+                        if (e.message != null && e.message!!.contains("foreign key constraint")){
                             ServerUtility.responseError(routingContext, 404, 4, "好友id不存在")
                         }
                         else {
@@ -225,7 +225,7 @@ object Friend {
                         reNickname = app.nickname
 
                         if (app.receiver != me || app.sender != friendId){
-                            ServerUtility.responseError(routingContext, 403, 5, "没有权限")
+                            ServerUtility.responseError(routingContext, 403, 2, "权限不足")
                             return@launch
                         }
 

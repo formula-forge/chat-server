@@ -44,4 +44,8 @@ object CheckUtility {
 
         return booleanArrayOf(num , alpha , Alpha , sign).count{ x -> return x} >= 3
     }
+
+    fun checkPhone(s : String) : Boolean {
+        return s.matches(Regex("^1[3-9]\\d{9}\$"))
+    }
 }

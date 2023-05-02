@@ -3,6 +3,7 @@ package utilities
 import io.jsonwebtoken.SignatureAlgorithm
 import io.jsonwebtoken.security.Keys
 import io.vertx.core.json.JsonObject
+import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.Json
 import kotlinx.coroutines.Job
 import javax.crypto.SecretKey
@@ -30,5 +31,12 @@ object AuthUtility {
         catch (e : io.jsonwebtoken.security.SecurityException){
             null
         }
+    }
+
+    fun getUserId(routingContext: RoutingContext) : Int{
+        val token = routingContext.request().getCookie("token")!!
+        val subject = AuthUtility.verifyToken(token.value)!!
+        val me = subject.getInteger("userId")!!
+        return me
     }
 }

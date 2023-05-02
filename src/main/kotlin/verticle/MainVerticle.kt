@@ -115,6 +115,8 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/formula").order(20).handler(User.getFavFormula)
         mainRouter.put("/api/formula").order(21).handler(User.updateFavFormula)
 
+        mainRouter.get("/api/sms").order(0).handler(User.getSMS)
+
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)

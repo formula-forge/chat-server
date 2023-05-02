@@ -34,4 +34,14 @@ object ServerUtility {
             res.encode()
         )
     }
+
+    fun checkNull(context : RoutingContext, vararg args : Any?) : Boolean {
+        for (arg in args) {
+            if (arg == null) {
+                responseError(context, 400, 1, "参数不完整")
+                return true
+            }
+        }
+        return false
+    }
 }
