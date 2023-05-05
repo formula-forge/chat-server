@@ -14,11 +14,11 @@ suspend fun main(args: Array<String>) {
 //
 //    val friendDao = FriendDao()
 
-    println(UserDao().insertElement(ConnectionPool.getPool(),UserEntity(
-        userName = "testG",
-        passWord = "P@ssW0rd",
-        phone = "19260000000"
-    )))
+//    println(UserDao().insertElement(ConnectionPool.getPool(),UserEntity(
+//        userName = "testG",
+//        passWord = "P@ssW0rd",
+//        phone = "19260000000"
+//    )))
 
     val vertx = Vertx.vertx()
     vertx.deployVerticle(MainVerticle())

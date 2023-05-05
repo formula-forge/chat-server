@@ -192,7 +192,7 @@ object Group {
                     val me = AuthUtility.getUserId(routingContext)
 
                     // 获取群组id
-                    val groupId = routingContext.pathParam("id")!!.toInt()
+                    val groupId = routingContext.pathParam("groupId")!!.toInt()
 
                     // 获取请求体
                     val req = buff.toJsonObject()
@@ -243,7 +243,7 @@ object Group {
                 val me = AuthUtility.getUserId(routingContext)
 
                 // 获取群组id
-                val groupId = routingContext.pathParam("id")!!.toInt()
+                val groupId = routingContext.pathParam("groupId")!!.toInt()
 
                 // 验证权限
                 checkUserRole(groupId, me, "owner")
@@ -280,7 +280,7 @@ object Group {
 
                 // 获取群成员信息
                 val membersAsUser =
-                    userDao.getUsersById(ConnectionPool.getPool(), members.map { member -> member.userId!! })
+                    userDao.getElementByKeys(ConnectionPool.getPool(), members.map { member -> member.userId!! })
 
                 val membersComposed = members.map { groupMember ->
                     val id = groupMember.userId

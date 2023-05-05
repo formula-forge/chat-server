@@ -1,7 +1,6 @@
 package dao
 
 import dao.entities.FriendEntity
-import dao.entities.UserEntity
 import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Tuple
@@ -43,6 +42,33 @@ class FriendDao{
             val id = i.userId!!
             i.name = friendAsUsers?.get(id)?.userName
             i.avatar = friendAsUsers?.get(id)?.avatar
+        }
+
+        return result
+    }
+
+    suspend fun getFriends(connection: PgPool, user : Int, friend: List<Int>) : Map<Int,FriendEntity> {
+        if (friend.isEmpty())
+            return HashMap()
+
+        val queries = listOf(
+            Tuple.of(77,65),
+            Tuple.of(77,85)
+        )
+
+        val rows = connection
+            .preparedQuery("SELECT * FROM friend WHERE master = $1 AND slave = ANY($2)")
+            .execute(Tuple.of(user, friend.toTypedArray())).await()
+
+        val result = HashMap<Int, FriendEntity>()
+
+        rows?.forEach { row->
+            val friendEntity = FriendEntity(
+                userId = row.getInteger("slave"),
+                classification = row.getString("classification"),
+                nickname = row.getString("nickname")
+            )
+            result[friendEntity.userId!!] = friendEntity
         }
 
         return result

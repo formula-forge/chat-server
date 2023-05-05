@@ -104,7 +104,7 @@ object Friend {
                     val classification = req["classification"] as String?
 
                     //获取备注
-                    val nickName = req["nickname"] as String?
+                    val nickname = req["nickname"] as String?
 
                     //获取申请消息
                     val message = req["message"] as String?
@@ -117,7 +117,7 @@ object Friend {
                                 sender = me,
                                 receiver = friendId,
                                 classification = classification,
-                                nickname = nickName,
+                                nickname = nickname,
                                 message = message,
                                 createdAt = LocalDate.now()
                             )
@@ -245,11 +245,11 @@ object Friend {
                     //获取分组
                     val classification = req["classification"] as String?
                     //获取备注
-                    val nickName = req["nickname"] as String?
+                    val nickname = req["nickname"] as String?
 
                     //添加好友
                     try {
-                        frienddao.addFriend(ConnectionPool.getPool(), me, friendId, classification, nickName, reClass, reNickname)
+                        frienddao.addFriend(ConnectionPool.getPool(), me, friendId, classification, nickname, reClass, reNickname)
                     }
                     catch (e : Exception){
                         //好友id不存在
@@ -319,22 +319,37 @@ object Friend {
                         LocalDate.now().minusDays(expire.toLong())
                     )
 
-                    val itemMapping = fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
-                        return json {
-                            obj(
-                                "appId" to item.value.id,
-                                "sender" to item.value.sender,
-                                "message" to item.value.message,
-                                "approved" to item.value.approved
-                            )
+//                    val itemMapping = fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
+//                        return json {
+//                            obj(
+//                                "appId" to item.value.id,
+//                                "sender" to item.value.sender,
+//                                "message" to item.value.message,
+//                                "approved" to item.value.approved
+//                            )
+//                        }
+//                    }
+
+                    fun itemMapping(posted : Boolean): (Map.Entry<Int, FriendAppEntiiy>) -> JsonObject {
+                        return fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
+                            val result = json {
+                                obj(
+                                    "appId" to item.value.id,
+                                    "message" to item.value.message,
+                                    "approved" to item.value.approved,
+                                )
+                            }
+                            if (posted) result.put("receiver", item.value.receiver)
+                            else result.put("sender", item.value.sender)
+                            return result
                         }
                     }
 
                     //返回
                     ServerUtility.responseSuccess(routingContext, 200, json {
                         obj(
-                            "posted" to posted?.map(itemMapping) ,
-                            "received" to received?.map(itemMapping)
+                            "posted" to posted?.map(itemMapping(true)) ,
+                            "received" to received?.map(itemMapping(false))
                         )
                     })
                 }
@@ -424,11 +439,11 @@ object Friend {
                     //获取分组
                     val classification = req["class"] as String?
                     //获取备注
-                    val nickName = req["nickname"] as String?
+                    val nickname = req["nickname"] as String?
 
                     //修改好友信息
                     try {
-                        frienddao.updateFriend(ConnectionPool.getPool(), me, friendId, classification, nickName)
+                        frienddao.updateFriend(ConnectionPool.getPool(), me, friendId, classification, nickname)
                     }
                     catch (e : Exception){
                         //其他错误

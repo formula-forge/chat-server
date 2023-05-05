@@ -19,7 +19,7 @@ class GroupDao : BaseDao<GroupEntity, Int>() {
         )
     }
 
-    override val keyName: String = "userid"
+    override val keyName: String = "id"
     override val primaryKey : KProperty1<GroupEntity, Int?> = GroupEntity::groupId
     override val colSize: Int = 8
     override val rowMap: Map<String, KProperty1<GroupEntity, Any?>> = mapOf(

@@ -7,6 +7,7 @@ import io.vertx.sqlclient.RowSet
 import io.vertx.sqlclient.Tuple
 import io.vertx.sqlclient.impl.ArrayTuple
 import java.awt.RenderingHints.Key
+import javax.swing.tree.RowMapper
 import kotlin.reflect.KProperty1
 
 
@@ -27,6 +28,23 @@ abstract class BaseDao <T : Any, TKey : Any> {
         if (rows.size() >= 2)
             throw RuntimeException("Duplicated primary key %s at %s".format(key.toString(),keyName))
         return rowMapper(rows.first())
+    }
+
+    open suspend fun getElementByKeys(connection: PgPool, keys : List<TKey>) : Map<TKey,T>{
+        val result = HashMap<TKey,T>()
+        if (keys.isEmpty())
+            return result
+        val rows = connection
+            .preparedQuery("SELECT * FROM %s WHERE \"%s\" = ANY($1)".format(tableName, keyName))
+            .execute(Tuple.of(keys)).await()
+
+        rows.forEach{ row->
+            val entity = rowMapper(row)
+            val key = primaryKey.get(entity)
+            if (key != null)
+                result[key] = entity
+        }
+        return result
     }
 
     private fun composeRows(rows : RowSet<Row>) : HashMap<TKey,T>?{

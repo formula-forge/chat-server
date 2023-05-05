@@ -7,10 +7,7 @@ import io.vertx.ext.web.Router
 import io.vertx.ext.web.handler.CorsHandler
 import io.vertx.kotlin.coroutines.CoroutineVerticle
 import kotlinx.coroutines.DelicateCoroutinesApi
-import services.Chat
-import services.Friend
-import services.Session
-import services.User
+import services.*
 import utilities.AuthUtility
 import utilities.ServerUtility
 import java.io.InputStream
@@ -115,7 +112,14 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/formula").order(20).handler(User.getFavFormula)
         mainRouter.put("/api/formula").order(21).handler(User.updateFavFormula)
 
-        mainRouter.get("/api/sms").order(0).handler(User.getSMS)
+        mainRouter.get("/api/user/sms").order(-2).handler(User.getSMS)
+
+        mainRouter.get("/api/group").order(22).handler(Group.listGroup)
+        mainRouter.get("/api/group/:groupId").order(23).handler(Group.getGroup)
+        mainRouter.patch("/api/group/:groupId").order(24).handler(Group.updateGroup)
+        mainRouter.delete("/api/group/:groupId").order(25).handler(Group.deleteGroup)
+        mainRouter.post("/api/group").order(26).handler(Group.createGroup)
+        mainRouter.post("/api/group/:groupId/member").order(27).handler(Group.addGroupMember)
 
         server.webSocketHandler(Chat.wsHandler)
 

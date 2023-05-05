@@ -1,9 +1,6 @@
 package services
 
-import dao.ConnectionPool
-import dao.MessageDao
-import dao.SessionDao
-import dao.UserDao
+import dao.*
 import dao.entities.MessageEntity
 import dao.entities.SessionEntity
 import io.vertx.core.json.JsonArray
@@ -11,8 +8,6 @@ import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
-import io.vertx.sqlclient.Tuple
-import io.vertx.sqlclient.impl.ArrayTuple
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -20,7 +15,6 @@ import utilities.AuthUtility
 import utilities.ServerUtility
 import utilities.TimeUtility
 import java.lang.NumberFormatException
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -28,6 +22,7 @@ object Session {
     private val sessiondao = SessionDao()
     private val userdao = UserDao()
     private val messagedao = MessageDao()
+    private val friendao = FriendDao()
 
     //获取会话列表
     @OptIn(DelicateCoroutinesApi::class)
@@ -63,25 +58,38 @@ object Session {
                     val retSessions = JsonArray()
                     var totUnread = 0
 
+                    val userList = ArrayList<Int>()
+                    val groupList = ArrayList<Int>()
+
+                    sessions.forEach { session ->
+                        if(session.group!!){
+                            //群聊
+                            groupList.add(session.target!!)
+                        } else{
+                            //私聊
+                            userList.add(session.target!!)
+                        }
+                    }
+
+                    val userAvatarMap = userdao.getUsersAvatars(ConnectionPool.getPool(), userList)
+                    val groupMap = GroupDao().getElementByKeys(ConnectionPool.getPool(), groupList)
+                    val friendMap = friendao.getFriends(ConnectionPool.getPool(), me, userList)
+
                     sessions.forEach { session ->
                         if(session.group!!){
                             //群聊
                         } else{
                             //私聊
-                            val user = try {
-                                userdao.getElementByKey(ConnectionPool.getPool(), session.target!!)
-                            } catch (e : Exception){
-                                ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                                e.printStackTrace()
-                                return@launch
-                            }
+                            val id = session.target!!
 
                             retSessions.add(
                                 json {
                                     obj (
                                         "type" to "user",
-                                        "id" to user?.userId,
+                                        "id" to session.target,
                                         "latest" to session.latest_msg,
+                                        "nickname" to friendMap[id]?.nickname,
+                                        "avatar" to userAvatarMap[id],
                                         "time" to TimeUtility.parseTimeStamp(session.latest!!),
                                         "unread" to session.unread
                                     )

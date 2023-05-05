@@ -43,17 +43,18 @@ class UserDao : BaseDao<UserEntity, Int>() {
             return map
        }
 
-    suspend fun getUsersById(connection: PgPool, id: List<Int>): Map<Int,UserEntity> {
+    suspend fun getUsersAvatars(connection: PgPool, id: List<Int>): Map<Int,String> {
+        if (id.isEmpty()) return HashMap()
         val rows = connection
-            .preparedQuery("SELECT * FROM %s WHERE %s = $1".format(tableName, keyName))
-            .executeBatch(id.map { Tuple.of(it) }).await()
+            .preparedQuery("SELECT id,avatar FROM %s WHERE %s = ANY(\$1)".format(tableName, keyName))
+            .execute(Tuple.of(id.toTypedArray())).await()
 
-        val ret = HashMap<Int, UserEntity>()
+        val ret = HashMap<Int, String>()
 
         rows?.forEach{ row ->
-            val user = rowMapper(row)
-
-            ret[user.userId!!] = user
+            val userId = row.getInteger(keyName)
+            val avatar = row.getString("avatar")
+            ret[userId] = avatar
         }
 
         return ret
