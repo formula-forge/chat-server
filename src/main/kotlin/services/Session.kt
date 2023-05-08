@@ -36,7 +36,7 @@ object Session {
 
                 //获取会话列表
                 val sessions = try {
-                    sessiondao.getElements(ConnectionPool.getPool(), "id = \$1", me)
+                    sessiondao.getElements(ConnectionPool.getPool(), "id = \$1 AND hidden = false", me)
                 }
                 catch (e : Exception){
                     ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
@@ -140,9 +140,33 @@ object Session {
                     return@launch
                 }
 
+                val session = try {
+                    sessiondao.getElementByKey(ConnectionPool.getPool(), me, target)!!
+                } catch (e : NullPointerException){
+                    ServerUtility.responseError(routingContext, 404, 1, "会话不存在")
+                    return@launch
+                } catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                if(session.hidden!!){
+                    ServerUtility.responseSuccess(routingContext, 200, json {
+                        obj(
+                            "messages" to JsonArray(),
+                            "unread" to 0
+                        )
+                    })
+                    return@launch
+                }
+
                 //获取会话列表
                 val messages = try {
-                    messagedao.getElements(ConnectionPool.getPool(), "((sender = \$1 AND receiver = \$2) OR (receiver = \$3 AND sender = \$4))", me, target, me, target)
+                    messagedao
+                        .getElements(ConnectionPool.getPool(),
+                            "((sender = \$1 AND receiver = \$2) OR (receiver = \$3 AND sender = \$4)) AND time > \$5",
+                            me, target, me, target, session.expire!!)
                 }
                 catch (e : Exception){
                     ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
@@ -277,9 +301,14 @@ object Session {
                 }
 
                 try {
-                    sessiondao.deleteElementsByConditions(
+                    sessiondao.updateElementByConditions(
                         ConnectionPool.getPool(),
-                        "id = \$1 AND target = \$2 AND \"group\" = \$3",
+                        "id = \$%d AND target = \$%d AND \"group\" = \$%d",
+                        SessionEntity(
+                            unread = 0,
+                            hidden = true,
+                            expire = LocalDateTime.now(ZoneOffset.ofHours(8))
+                        ),
                         me,target,type == "group"
                     )
                 }
