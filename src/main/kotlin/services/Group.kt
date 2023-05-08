@@ -496,13 +496,7 @@ object Group {
                     }
 
                     //获取群组Id
-                    val groupId = try {
-                        req["groupId"] as Int
-                    }
-                    catch(e:ClassCastException){
-                        ServerUtility.responseError(routingContext,400,1,"需提供群组Id")
-                        return@launch
-                    }
+                    val groupId = routingContext.pathParam("groupId")!!.toInt()
 
                     //获取申请信息
                     val message = req["message"] as String?
