@@ -194,6 +194,7 @@ object User {
                 //如果是自己
                 if (self) {
                     data.put("phone", user.phone)
+                    data.put("type", "me")
                 }
                 //如果不是自己
                 else {
@@ -203,11 +204,17 @@ object User {
                         responseError(routingContext, 500, 30, "数据库错误")
                         return@launch
                     }
+                    if(friend)
+                        data.put("type", "friend")
                 }
 
                 //如果是好友
                 if (friend) {
                     data.put("detail", user.userDetail)
+                }
+
+                if (!self && !friend) {
+                    data.put("type", "stranger")
                 }
 
                 //返回成功
@@ -228,9 +235,9 @@ object User {
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch {
                 try {
-                    // 从请求中获取用户id
-                    val userId: Int = try {
-                        routingContext.pathParam("id").toInt()
+//                     从请求中获取用户id
+                    var userId: Int? = try {
+                        routingContext.pathParam("id")?.toInt()
                     } catch (e: NumberFormatException) {
                         responseError(routingContext, 400, 1, "参数不合法")
                         return@launch
@@ -241,6 +248,9 @@ object User {
                     val token = routingContext.request().getCookie("token")!!
                     val subject = AuthUtility.verifyToken(token.value)!!
                     val me = subject.getInteger("userId")!!
+
+                    if (userId == null)
+                        userId = me
 
                     if (userId != me) {
                         responseError(routingContext, 403, 2, "权限不足")
@@ -325,8 +335,8 @@ object User {
         GlobalScope.launch {
             try {
                 // 从请求中获取用户id
-                val userId: Int = try {
-                    routingContext.pathParam("id").toInt()
+                var userId: Int? = try {
+                    routingContext.pathParam("id")?.toInt()
                 } catch (e: NumberFormatException) {
                     responseError(routingContext, 400, 1, "参数不合法")
                     return@launch
@@ -338,6 +348,9 @@ object User {
                 val token = routingContext.request().getCookie("token")!!
                 val subject = AuthUtility.verifyToken(token.value)!!
                 val me = subject.getInteger("userId")!!
+
+                if(userId == null)
+                    userId = me
 
                 if (userId != me) {
                     responseError(routingContext, 403, 2, "权限不足")

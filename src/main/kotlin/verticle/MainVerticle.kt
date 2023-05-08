@@ -13,6 +13,7 @@ import utilities.ServerUtility
 import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import kotlin.io.path.Path
 
 class MainVerticle : CoroutineVerticle() {
     @OptIn(DelicateCoroutinesApi::class)
@@ -20,6 +21,10 @@ class MainVerticle : CoroutineVerticle() {
         val server = vertx.createHttpServer()
 
         val mainRouter =  Router.router(vertx)
+
+        val fileSystem = vertx.fileSystem()
+
+        val image = services.Image(fileSystem, Path("/var/images"), vertx)
 
         mainRouter.route().order(-3).handler(
             CorsHandler.create("*")
@@ -34,14 +39,6 @@ class MainVerticle : CoroutineVerticle() {
                 .allowCredentials(true)
                 .allowedHeader("Access-Control-Allow-Origin")
         )
-
-        mainRouter.get("/img/default.png").order(-2).handler{
-            val resource = this.javaClass.getResourceAsStream("/img/default.png").buffered()
-            it.response().putHeader(HttpHeaders.CONTENT_TYPE,"image/png")
-            it.response().end(
-                Buffer.buffer(resource.readBytes())
-            )
-        }
 
         mainRouter.post("/api/hello").order(-1).handler {
             it.response().end("Hello World!")
@@ -91,7 +88,9 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/user/:id").order(4).handler(User.getUser)
         mainRouter.get("/api/user").order(5).handler(User.getUser)
         mainRouter.delete("/api/user/:id").order(6).handler(User.delUser)
+        mainRouter.delete("/api/user").order(6).handler(User.delUser)
         mainRouter.patch("/api/user/:id").order(7).handler(User.updUser)
+        mainRouter.patch("/api/user").order(30).handler(User.updUser)
 
         mainRouter.delete("/api/token").order(8).handler(User.logout)
 
@@ -120,6 +119,10 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.delete("/api/group/:groupId").order(25).handler(Group.deleteGroup)
         mainRouter.post("/api/group").order(26).handler(Group.createGroup)
         mainRouter.post("/api/group/:groupId/member").order(27).handler(Group.addGroupMember)
+
+        mainRouter.post("/api/img").order(-5).handler(image.upload)
+        mainRouter.get("/img/:file").order(-6).handler(image.download)
+
         mainRouter.delete("/api/group/:groupId/member/:userId").order(28).handler(Group.delGroupMember)
         mainRouter.post("/api/group/:groupId/application").order(29).handler(Group.applyGroup)
         server.webSocketHandler(Chat.wsHandler)

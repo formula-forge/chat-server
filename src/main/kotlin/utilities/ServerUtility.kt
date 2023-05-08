@@ -7,6 +7,7 @@ import io.vertx.kotlin.core.json.obj
 
 object ServerUtility {
     fun responseError(context: RoutingContext ,status : Int, error : Int, message : String) {
+        context.response().putHeader("Content-Type", "application/json")
         context.response().setStatusCode(status).end(
             json {
                 obj(

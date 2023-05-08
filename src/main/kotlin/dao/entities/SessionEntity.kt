@@ -10,4 +10,6 @@ data class SessionEntity (
     var latest : LocalDateTime? = null,
     var latest_msg : String? = null,
     var group : Boolean? = null,
+    var hidden : Boolean? = null,
+    val expire : LocalDateTime? = null
 )

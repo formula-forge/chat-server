@@ -23,21 +23,21 @@ class SessionDao : BaseDao<SessionEntity, Int>() {
             latest = row.getLocalDateTime("latest"),
             group = row.getBoolean("group"),
             latest_msg = row.getString("latest_msg"),
+            hidden = row.getBoolean("hidden"),
+            expire = row.getLocalDateTime("expire")
         )
     }
 
-    override val rowMap: Map<String, KProperty1<SessionEntity, Any?>>
-        get(){
-            val map = HashMap<String, KProperty1<SessionEntity, Any?>>()
-            map["id"] = SessionEntity::userId
-            map["target"] = SessionEntity::target
-            map["unread"] = SessionEntity::unread
-            map["latest"] = SessionEntity::latest
-            map["group"] = SessionEntity::group
-            map["latest_msg"] = SessionEntity::latest_msg
-            return map
-        }
-
+    override val rowMap: Map<String, KProperty1<SessionEntity, Any?>> = mapOf(
+        "id" to SessionEntity::userId,
+        "target" to SessionEntity::target,
+        "unread" to SessionEntity::unread,
+        "latest" to SessionEntity::latest,
+        "group" to SessionEntity::group,
+        "latest_msg" to SessionEntity::latest_msg,
+        "hidden" to SessionEntity::hidden,
+        "expire" to SessionEntity::expire
+    )
 
     override suspend fun getElementByKey(connection: PgPool, key: Int): SessionEntity? {
         throw UnsupportedOperationException("Unsupported key type")

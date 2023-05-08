@@ -60,7 +60,8 @@ object Chat {
                     unread = null,
                     group = null,
                     latest = messageEntity.time,
-                    latest_msg = messageEntity.content
+                    latest_msg = messageEntity.content,
+                    hidden = false
                 ),
                     messageEntity.sender!!,
                     messageEntity.receiver!!
@@ -75,7 +76,7 @@ object Chat {
                     unread = 1,
                     group = null,
                     latest = messageEntity.time,
-                    latest_msg = messageEntity.content
+                    latest_msg = messageEntity.content,
                 )
                 )
             }
@@ -86,7 +87,8 @@ object Chat {
                     unread = session.unread!! + 1,
                     group = null,
                     latest = messageEntity.time,
-                    latest_msg = messageEntity.content
+                    latest_msg = messageEntity.content,
+                    hidden = false
                 ),
                     messageEntity.receiver!!,
                     messageEntity.sender!!
