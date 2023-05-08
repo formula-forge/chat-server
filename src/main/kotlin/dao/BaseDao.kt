@@ -85,7 +85,7 @@ abstract class BaseDao <T : Any, TKey : Any> {
         val prepared = ArrayTuple(1 + colSize)
         for(p in rowMap){
             if(p.value.get(entity) != null){
-                cols.append(p.key).append(",")
+                cols.append("\"").append(p.key).append("\"").append(",")
                 prepared.addValue(p.value.get(entity))
                 values.append("\$").append(cnt++).append(",")
             }
