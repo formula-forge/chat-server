@@ -1,12 +1,10 @@
 package services
 
 import dao.*
-import dao.entities.GroupEntity
-import dao.entities.GroupMemberEntity
-import dao.entities.GroupAppEntity
-import dao.entities.UserEntity
+import dao.entities.*
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonArray
+import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
@@ -19,6 +17,10 @@ import utilities.ServerUtility
 import java.time.LocalDate
 
 object Group {
+    private const val TYPE_POSTED = "posted"
+
+    private const val TYPE_RECEIVED = "received"
+
     private val groupDao = GroupDao()
     private val userDao = UserDao()
     private val groupMemberDao = GroupMemberDao()
@@ -530,6 +532,80 @@ object Group {
                     e.printStackTrace()
                     return@launch
                 }
+            }
+        }
+    }
+
+    //获取加群申请列表
+    @OptIn(DelicateCoroutinesApi::class)
+    val listGroupApp = fun(routingContext: RoutingContext) {
+        GlobalScope.launch {
+            try {
+                //获取参数
+                val groupId = routingContext.pathParam("groupId")!!.toInt()
+
+                val expire: Int = try {
+                    routingContext.request().getParam("expire")?.toInt() ?: 30
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 400, 1, "过期时间格式错误")
+                    return@launch
+                }
+
+                val type: String = routingContext.request().getParam("type") ?: "both"
+
+                //验证token
+                val token = routingContext.request().getCookie("token")!!
+                val subject = AuthUtility.verifyToken(token.value)!!
+                val me = subject.getInteger("userId")!!
+
+                //获取群组申请列表
+                try {
+                    val posted = if (type == TYPE_RECEIVED) null else groupAppDao.getElementsByConditions(
+                        ConnectionPool.getPool(),
+                        "sender = \$1 AND created_at > \$2",
+                        me,
+                        LocalDate.now().minusDays(expire.toLong())
+                    )
+
+                    val received = if (type == TYPE_POSTED) null else groupAppDao.getElementsByConditions(
+                        ConnectionPool.getPool(),
+                        "group_id = \$1 AND created_at > \$2",
+                        groupId,
+                        LocalDate.now().minusDays(expire.toLong())
+                    )
+
+                    fun itemMapping(posted: Boolean): (Map.Entry<Int, GroupAppEntity>) -> JsonObject {
+                        return fun(item: Map.Entry<Int, GroupAppEntity>): JsonObject {
+                            val result = json {
+                                obj(
+                                    "appId" to item.value.id,
+                                    "groupId" to item.value.group,
+                                    "accepted" to item.value.approved,
+                                )
+                            }
+                            if (!posted) result.put("userId", item.value.sender)
+                            return result
+                        }
+                    }
+
+                    //返回
+                    ServerUtility.responseSuccess(routingContext, 200, json {
+                        obj(
+                            "posted" to posted?.map(itemMapping(true)),
+                            "received" to received?.map(itemMapping(false))
+                        )
+                    })
+                }
+                catch (e : Exception){
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+            }
+            catch (e : Exception){
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                e.printStackTrace()
+                return@launch
             }
         }
     }

@@ -11,7 +11,7 @@ object ConnectionPool {
     fun connect(connectOptions: PgConnectOptions =
                     PgConnectOptions()
                         .setPort(5432)
-                        .setHost("192.168.2.3")
+                        .setHost("172.17.182.41")
                         .setDatabase("formula-alchemy")
                         .setUser("chatex")
                         .setPassword("6WS+EgWG3wYoffqI")

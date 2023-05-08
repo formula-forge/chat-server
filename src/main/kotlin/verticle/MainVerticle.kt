@@ -125,6 +125,7 @@ class MainVerticle : CoroutineVerticle() {
 
         mainRouter.delete("/api/group/:groupId/member/:userId").order(28).handler(Group.delGroupMember)
         mainRouter.post("/api/group/:groupId/application").order(29).handler(Group.applyGroup)
+        mainRouter.get("api/group/application").order(30).handler(Group.listGroupApp)
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)
