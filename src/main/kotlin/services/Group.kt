@@ -1,12 +1,11 @@
 package services
 
-import dao.ConnectionPool
-import dao.GroupDao
-import dao.GroupMemberDao
-import dao.UserDao
+import dao.*
 import dao.entities.GroupEntity
 import dao.entities.GroupMemberEntity
+import dao.entities.GroupAppEntity
 import dao.entities.UserEntity
+import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonArray
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
@@ -17,11 +16,13 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import utilities.AuthUtility
 import utilities.ServerUtility
+import java.time.LocalDate
 
 object Group {
     private val groupDao = GroupDao()
     private val userDao = UserDao()
     private val groupMemberDao = GroupMemberDao()
+    private val groupAppDao = GroupAppDao()
 
     private suspend fun checkUserRole(groupId: Int, me: Int, Role: String) {
         val condition = "userid = \$%d" + when (Role) {
@@ -477,7 +478,66 @@ object Group {
     // 申请加入群组
     @OptIn(DelicateCoroutinesApi::class)
     val applyGroup = fun(routingContext : RoutingContext){
-        
+        routingContext.request().bodyHandler { buff->
+            GlobalScope.launch {
+                try {
+                    //验证token
+                    val token = routingContext.request().getCookie("token")!!
+                    val subject = AuthUtility.verifyToken(token.value)!!
+                    val me = subject.getInteger("userId")!!
+
+                    //获取参数
+                    val req = try {
+                        buff.toJsonObject().map
+                    }
+                    catch(e:DecodeException){
+                        ServerUtility.responseError(routingContext,400,1,"参数错误")
+                        return@launch
+                    }
+
+                    //获取群组Id
+                    val groupId = try {
+                        req["groupId"] as Int
+                    }
+                    catch(e:ClassCastException){
+                        ServerUtility.responseError(routingContext,400,1,"需提供群组Id")
+                        return@launch
+                    }
+
+                    //获取申请信息
+                    val message = req["message"] as String?
+
+                    //发送入群申请
+                    try {
+                        groupAppDao.insertElement(
+                            ConnectionPool.getPool(),
+                            GroupAppEntity(
+                                sender = me,
+                                group = groupId,
+                                message = message,
+                                createdAt = LocalDate.now()
+                            )
+                        )
+
+                        ServerUtility.responseSuccess(routingContext, 200)
+                    }
+                    catch(e:PgException){
+                        ServerUtility.responseError(routingContext,500,30,"数据库错误")
+                        e.printStackTrace()
+                    }
+                    return@launch
+                }
+                catch (e : ClassCastException){
+                    ServerUtility.responseError(routingContext, 400, 1, "缺少参数")
+                    return@launch
+                }
+                catch(e:Exception){
+                    ServerUtility.responseError(routingContext,500,30,"服务器内部错误")
+                    e.printStackTrace()
+                    return@launch
+                }
+            }
+        }
     }
 }
 
