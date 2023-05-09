@@ -1,9 +1,6 @@
 package services
 
-import dao.ConnectionPool
-import dao.MessageDao
-import dao.SessionDao
-import dao.UserDao
+import dao.*
 import dao.entities.MessageEntity
 import dao.entities.SessionEntity
 import io.vertx.core.http.ServerWebSocket
@@ -24,6 +21,7 @@ object Chat {
     private val authedUsers = HashMap<Int,ServerWebSocket>()
     private val messageDao = MessageDao()
     private val sessionDao = SessionDao()
+    private val friendDao = FriendDao()
     private fun responseError(code : Int, msg : String, socket : ServerWebSocket){
         try {
             socket.writeTextMessage(json {
@@ -102,7 +100,7 @@ object Chat {
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun relayMessage(req: JsonObject, socket: ServerWebSocket, id: Int?){
+    private fun relayMessage(req: JsonObject, socket: ServerWebSocket, id: Int){
         if (!authedUsers.containsValue(socket)){
             responseError(400,"请先验证身份",socket)
             return
@@ -141,6 +139,18 @@ object Chat {
         }
 
         GlobalScope.launch {
+            val isFriend = try {
+                friendDao.checkFriendShip(ConnectionPool.getPool(),id,target)
+            } catch (e : Exception){
+                responseError(500,"服务器错误",socket)
+                return@launch
+            }
+
+            if (!isFriend){
+                responseError(403,"对方不是你的好友",socket)
+                return@launch
+            }
+
             try {
                 storeMessage(MessageEntity(
                     sender = id,
@@ -153,40 +163,41 @@ object Chat {
             catch (e : Exception){
                 responseError(500,"服务器错误",socket)
             }
-        }
 
-        val targetSocket = authedUsers[target]
-        if (targetSocket == null || targetSocket.isClosed){
-            responseError(202,"目标用户不在线，消息转存",socket)
-            return
-        }
+            val targetSocket = authedUsers[target]
+            if (targetSocket == null || targetSocket.isClosed){
+                responseError(202,"目标用户不在线，消息转存",socket)
+                return@launch
+            }
 
-        try{
-            targetSocket.writeTextMessage(json {
-                obj(
-                    "code" to 1,
-                    "message" to json{
-                        obj(
-                            "target" to id,
-                            "content" to content,
-                            "timestamp" to timestamp,
-                            "group" to null,
-                            "type" to "text"
-                        )
-                    }
+            try{
+                targetSocket.writeTextMessage(json {
+                    obj(
+                        "code" to 1,
+                        "message" to json{
+                            obj(
+                                "target" to id,
+                                "content" to content,
+                                "timestamp" to timestamp,
+                                "group" to null,
+                                "type" to "text"
+                            )
+                        }
+                    )
+                }.encode())
+            }
+            catch (e : Exception){
+                responseError(400,"目标用户不在线",socket)
+            }
+
+            socket.writeTextMessage(json {
+                obj (
+                    "code" to 200,
+                    "msg" to "Acknowledged"
                 )
             }.encode())
-        }
-        catch (e : Exception){
-            responseError(400,"目标用户不在线",socket)
-        }
 
-        socket.writeTextMessage(json {
-            obj (
-                "code" to 200,
-                "msg" to "Acknowledged"
-            )
-        }.encode())
+        }
     }
 
     fun userAuth(req : JsonObject, socket: ServerWebSocket) : Int?{
@@ -268,9 +279,11 @@ object Chat {
                     if(id == null){
                         responseError(400,"请先验证身份",socket)
                     }
-                    try { relayMessage(req, socket, id) }
-                    catch (e : Exception) {
-                        responseError(500,"服务器内部错误" + e.message,socket)
+                    else{
+                        try { relayMessage(req, socket, id!!) }
+                        catch (e : Exception) {
+                            responseError(500,"服务器内部错误" + e.message,socket)
+                        }
                     }
                 }
                 else -> {
