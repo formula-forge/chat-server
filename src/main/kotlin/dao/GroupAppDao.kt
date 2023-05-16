@@ -1,9 +1,7 @@
 package dao
 
-import dao.entities.FriendAppEntiiy
 import dao.entities.GroupAppEntity
 import io.vertx.sqlclient.Row
-import services.Group
 import kotlin.reflect.KProperty1
 
 class GroupAppDao : BaseDao<GroupAppEntity, Int>() {

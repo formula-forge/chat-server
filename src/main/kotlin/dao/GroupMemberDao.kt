@@ -3,11 +3,9 @@ package dao
 import dao.entities.GroupEntity
 import dao.entities.GroupMemberEntity
 import io.vertx.kotlin.coroutines.await
-import io.vertx.pgclient.PgConnection
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Tuple
 import io.vertx.sqlclient.impl.ArrayTuple
-import services.Group
 
 class GroupMemberDao {
     suspend fun getGroupMembers(connection : PgPool, group : Int, condClause : String? = null, vararg prepared : Any): List<GroupMemberEntity> {
@@ -74,15 +72,33 @@ class GroupMemberDao {
     }
 
     suspend fun updateGroupMember(connection: PgPool, group : Int, member : GroupMemberEntity){
-        connection.preparedQuery("UPDATE group_mem SET role = \$1, usrnickname = \$2, gpnickname = \$3 WHERE groupid = \$4 AND userid = \$5")
+        val clause = StringBuilder()
+
+        val prepared = ArrayTuple(8)
+
+        var counter = 1
+
+        if (member.role != null) {
+            clause.append("role = \$${counter++}, ")
+            prepared.addString(member.role)
+        }
+
+        if(member.usrnickname != null){
+            clause.append("usrnickname = \$${counter++}, ")
+            prepared.addString(member.usrnickname)
+        }
+
+        if(member.gpnickname != null){
+            clause.append("gpnickname = \$${counter++}, ")
+            prepared.addString(member.gpnickname)
+        }
+
+        prepared.addInteger(group)
+        prepared.addInteger(member.userId!!)
+
+        connection.preparedQuery("UPDATE group_mem SET %s WHERE groupid = \$${counter++} AND userid = \$${counter}".format(clause.substring(0, clause.length - 2)))
             .execute(
-                Tuple.of(
-                    member.role,
-                    member.usrnickname,
-                    member.gpnickname,
-                    group,
-                    member.userId
-                )
+                prepared
             )
             .await()
     }

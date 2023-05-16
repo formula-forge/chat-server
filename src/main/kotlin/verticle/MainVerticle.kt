@@ -6,6 +6,7 @@ import io.vertx.core.http.HttpMethod
 import io.vertx.ext.web.Router
 import io.vertx.ext.web.handler.CorsHandler
 import io.vertx.kotlin.coroutines.CoroutineVerticle
+import io.vertx.kotlin.coroutines.dispatcher
 import kotlinx.coroutines.DelicateCoroutinesApi
 import services.*
 import utilities.AuthUtility
@@ -25,6 +26,8 @@ class MainVerticle : CoroutineVerticle() {
         val fileSystem = vertx.fileSystem()
 
         val image = services.Image(fileSystem, Path("/var/images"), vertx)
+
+        GroupSimp.coroutineContext = vertx.dispatcher()
 
         mainRouter.route().order(-3).handler(
             CorsHandler.create("*")
