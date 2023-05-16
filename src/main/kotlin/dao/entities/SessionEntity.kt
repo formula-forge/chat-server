@@ -1,7 +1,6 @@
 package dao.entities
 
 import java.time.LocalDateTime
-import java.time.OffsetDateTime
 
 data class SessionEntity (
     var userId : Int? = null,

@@ -28,6 +28,8 @@ class MainVerticle : CoroutineVerticle() {
         val image = services.Image(fileSystem, Path("/var/images"), vertx)
 
         GroupSimp.coroutineContext = vertx.dispatcher()
+        Chat.coroutineContext = vertx.dispatcher()
+        Session.coroutineContext = vertx.dispatcher()
 
         mainRouter.route().order(-3).handler(
             CorsHandler.create("*")
@@ -106,6 +108,7 @@ class MainVerticle : CoroutineVerticle() {
 
         mainRouter.get("/api/session").order(15).handler(Session.getSessionList)
         mainRouter.get("/api/session/user/:id").order(16).handler(Session.getUserMessage)
+        mainRouter.get("/api/session/group/:id").order(30).handler(Session.getGroupMessage)
         mainRouter.patch("/api/session/:type/:id").order(17).handler(Session.markSession)
         mainRouter.delete("/api/session/:type/:id").order(18).handler(Session.delMessage)
 
@@ -116,19 +119,18 @@ class MainVerticle : CoroutineVerticle() {
 
         mainRouter.get("/api/user/sms").order(-2).handler(User.getSMS)
 
-        mainRouter.get("/api/group").order(22).handler(Group.listGroup)
-        mainRouter.get("/api/group/:groupId").order(23).handler(Group.getGroup)
-        mainRouter.patch("/api/group/:groupId").order(24).handler(Group.updateGroup)
-        mainRouter.delete("/api/group/:groupId").order(25).handler(Group.deleteGroup)
-        mainRouter.post("/api/group").order(26).handler(Group.createGroup)
-        mainRouter.post("/api/group/:groupId/member").order(27).handler(Group.addGroupMember)
+        mainRouter.get("/api/group").order(22).handler(GroupSimp.listGroup)
+        mainRouter.get("/api/group/:groupId").order(23).handler(GroupSimp.getGroup)
+        mainRouter.patch("/api/group/:groupId").order(24).handler(GroupSimp.updateGroup)
+        mainRouter.delete("/api/group/:groupId").order(25).handler(GroupSimp.deleteGroup)
+        mainRouter.post("/api/group").order(26).handler(GroupSimp.createGroup)
+        mainRouter.post("/api/group/:groupId/member").order(27).handler(GroupSimp.addGroupMember)
+        mainRouter.get("/api/group/:groupId/member").order(28).handler(GroupSimp.getGroupMembers)
+        mainRouter.delete("/api/group/:groupId/member/:userId").order(29).handler(GroupSimp.delGroupMember)
 
         mainRouter.post("/api/img").order(-5).handler(image.upload)
         mainRouter.get("/img/:file").order(-6).handler(image.download)
 
-        mainRouter.delete("/api/group/:groupId/member/:userId").order(28).handler(Group.delGroupMember)
-        mainRouter.post("/api/group/:groupId/application").order(29).handler(Group.applyGroup)
-        mainRouter.get("/api/group/application").order(30).handler(Group.listGroupApp)
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)

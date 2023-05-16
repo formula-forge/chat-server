@@ -22,7 +22,7 @@ class MessageDao : BaseDao<MessageEntity, Int>(){
             receiver = row.getInteger("receiver"),
             type = row.getString("type"),
             time = row.getLocalDateTime("time"),
-            group = row.getInteger("group"),
+            group = row.getBoolean("group"),
             content = row.getString("content"),
         )
     }
@@ -64,14 +64,6 @@ class MessageDao : BaseDao<MessageEntity, Int>(){
         return composeRows(rows)
     }
 
-    suspend fun getElementByKey(connection: PgPool, sender: Int, receiver: Int, time : LocalDateTime): MessageEntity? {
-        val rows = connection
-            .preparedQuery("SELECT * FROM %s WHERE sender = \$1 AND receiver = \$2 AND time = \$3".format(tableName))
-            .execute(Tuple.of(sender, receiver, time)).await()
-        if (rows.size() == 0)
-            return null
-        return rowMapper(rows.first())
-    }
 
     override suspend fun deleteElementByKey(connection: PgPool, key: Int) {
         throw UnsupportedOperationException("Unsupported key type")

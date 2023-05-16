@@ -40,7 +40,7 @@ object GroupSimp {
     // 获取群组列表
     @OptIn(DelicateCoroutinesApi::class)
     val listGroup = fun(routingContext: RoutingContext) {
-        GlobalScope.launch() {
+        GlobalScope.launch(context = coroutineContext) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
 
@@ -180,7 +180,10 @@ object GroupSimp {
                     val me = AuthUtility.getUserId(routingContext)
 
                     // 获取群组id
-                    val groupId = routingContext.pathParam("groupId")!!.toInt()
+                    val groupId = routingContext.pathParam("groupId")?.toInt()
+
+                    if (ServerUtility.checkNull(routingContext, groupId))
+                        return@launch
 
                     // 获取请求体
                     val req = buff.toJsonObject()
@@ -189,7 +192,7 @@ object GroupSimp {
                     val avatar: String? = req.getString("avatar")
 
                     // 验证权限
-                    if (!isOwner(groupId, me)){
+                    if (!isOwner(groupId!!, me)){
                         ServerUtility.responseError(routingContext, 403, 2, "权限不足")
                         return@launch
                     }
@@ -201,7 +204,8 @@ object GroupSimp {
                         GroupEntity(
                             name = name,
                             avatar = avatar
-                        )
+                        ),
+                        groupId
                     )
 
                     ServerUtility.responseSuccess(routingContext, 200)
@@ -228,16 +232,26 @@ object GroupSimp {
                 val me = AuthUtility.getUserId(routingContext)
 
                 // 获取群组id
-                val groupId = routingContext.pathParam("groupId")!!.toInt()
+                val groupId = routingContext.pathParam("groupId")?.toInt()
 
-                // 验证权限
-                if (!isOwner(groupId, me)){
+                if (ServerUtility.checkNull(routingContext, groupId))
+                    return@launch
+
+                val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId!!)
+
+                if (group == null){
+                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在")
+                    return@launch
+                }
+                if (group.owner != me) {
                     ServerUtility.responseError(routingContext, 403, 2, "权限不足")
                     return@launch
                 }
 
                 // 删除群组
                 groupDao.deleteElementByKey(ConnectionPool.getPool(), groupId)
+
+                ServerUtility.responseSuccess(routingContext, 200)
             } catch (e: NullPointerException) {
                 ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
             } catch (e: PgException) {
@@ -257,7 +271,7 @@ object GroupSimp {
             try {
                 val me = AuthUtility.getUserId(routingContext)
                 // 获取群组id
-                val groupId = routingContext.pathParam("id")!!.toInt()
+                val groupId = routingContext.pathParam("groupId")!!.toInt()
 
                 // 获取群成员
                 val members = groupMemberDao.getGroupMembers(ConnectionPool.getPool(), groupId)
@@ -306,7 +320,10 @@ object GroupSimp {
                     val me = AuthUtility.getUserId(routingContext)
 
                     // 获取群组id
-                    val groupId = routingContext.pathParam("id")!!.toInt()
+                    val groupId = routingContext.pathParam("groupId")?.toInt()
+
+                    if (ServerUtility.checkNull(routingContext, groupId))
+                        return@launch
 
                     // 获取请求体
                     val req = buff.toJsonObject()
@@ -318,7 +335,7 @@ object GroupSimp {
                     // 添加成员
                     groupMemberDao.addGroupMembers(
                         ConnectionPool.getPool(),
-                        groupId,
+                        groupId!!,
                         listOf(
                             GroupMemberEntity(
                                 userId = userId,
@@ -327,6 +344,7 @@ object GroupSimp {
                         )
                     )
 
+                    ServerUtility.responseSuccess(routingContext, 201)
                 } catch (e: ClassCastException) {
                     ServerUtility.responseError(routingContext, 400, 1, "参数类型错误")
                 } catch (e: PgException) {
@@ -352,23 +370,30 @@ object GroupSimp {
         GlobalScope.launch(context = coroutineContext){
             try {
                 val me = AuthUtility.getUserId(routingContext)
-
+                
                 // 获取群组id
-                val groupId = routingContext.pathParam("id")?.toInt()
+                val groupId = routingContext.pathParam("groupId")?.toInt()
                 // 获取用户id
                 val userId = routingContext.pathParam("userId")?.toInt()
 
                 if (ServerUtility.checkNull(routingContext, groupId, userId))
                     return@launch
 
-                // 验证权限
-                if (userId != me && isOwner(groupId!!, me)) {
+                val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId!!)
+
+                if (group == null){
+                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在")
+                    return@launch
+                }
+                if (userId != me && group.owner != me || group.owner == userId) {
                     ServerUtility.responseError(routingContext, 403, 2, "权限不足")
                     return@launch
                 }
 
                 // 删除成员
                 groupMemberDao.removeGroupMember(ConnectionPool.getPool(), groupId!!, userId!!)
+
+                ServerUtility.responseSuccess(routingContext, 200)
             } catch (e: NullPointerException) {
                 ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
             } catch (e: ClassCastException) {

@@ -8,6 +8,7 @@ import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
+import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -17,17 +18,22 @@ import utilities.TimeUtility
 import java.lang.NumberFormatException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 object Session {
     private val sessiondao = SessionDao()
     private val userdao = UserDao()
     private val messagedao = MessageDao()
     private val friendao = FriendDao()
+    private val groupMemberDao = GroupMemberDao()
+
+    var coroutineContext : CoroutineContext = EmptyCoroutineContext
 
     //获取会话列表
     @OptIn(DelicateCoroutinesApi::class)
     val getSessionList = fun(routingContext : RoutingContext){
-        GlobalScope.launch {
+        GlobalScope.launch(coroutineContext) {
             try {
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -78,10 +84,27 @@ object Session {
                     sessions.forEach { session ->
                         if(session.group!!){
                             //群聊
+                            val group = session.target!!
+                            if(!groupMap.containsKey(group))
+                                return@forEach
+                            retSessions.add(
+                                json {
+                                    obj(
+                                        "type" to "group",
+                                        "id" to session.target,
+                                        "latest" to session.latest_msg,
+                                        "nickname" to groupMap[group]?.name,
+                                        "avatar" to groupMap[group]?.avatar,
+                                        "time" to TimeUtility.parseTimeStamp(session.latest!!),
+                                        "unread" to session.unread
+                                    )
+                                }
+                            )
                         } else{
                             //私聊
                             val id = session.target!!
-
+                            if(!groupMap.containsKey(id))
+                                return@forEach
                             retSessions.add(
                                 json {
                                     obj (
@@ -121,10 +144,10 @@ object Session {
         }
     }
 
-    //获取会话消息
+    //获取个人会话消息
     @OptIn(DelicateCoroutinesApi::class)
     val getUserMessage = fun(routingContext : RoutingContext){
-        GlobalScope.launch {
+        GlobalScope.launch(coroutineContext) {
             try {
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -140,8 +163,13 @@ object Session {
                     return@launch
                 }
 
+                if (friendao.checkFriendShip(ConnectionPool.getPool(), me, target)){
+                    ServerUtility.responseError(routingContext, 403, 1, "没有权限")
+                    return@launch
+                }
+
                 val session = try {
-                    sessiondao.getElementByKey(ConnectionPool.getPool(), me, target)!!
+                    sessiondao.getElementByKey(ConnectionPool.getPool(), me, target, false)!!
                 } catch (e : NullPointerException){
                     ServerUtility.responseError(routingContext, 404, 1, "会话不存在")
                     return@launch
@@ -161,11 +189,11 @@ object Session {
                     return@launch
                 }
 
-                //获取会话列表
+                //获取消息列表
                 val messages = try {
                     messagedao
                         .getElements(ConnectionPool.getPool(),
-                            "((sender = \$1 AND receiver = \$2) OR (receiver = \$3 AND sender = \$4)) AND time > \$5",
+                            "((sender = \$1 AND receiver = \$2) OR (receiver = \$3 AND sender = \$4)) AND time > \$5 AND \"group\" = false",
                             me, target, me, target, session.expire!!)
                 }
                 catch (e : Exception){
@@ -174,21 +202,18 @@ object Session {
                     return@launch
                 }
 
-                val ret_sessions = JsonArray()
-                var count = if (messages == null)  0 else messages.size
-
-                val meUser = userdao.getElementByKey(ConnectionPool.getPool(), me)
-                val targetUser = userdao.getElementByKey(ConnectionPool.getPool(), target)
+                val retSessions = JsonArray()
+                val count = messages?.size ?: 0
 
                 messages?.forEach { message ->
-                    ret_sessions.add(
+                    retSessions.add(
                         json {
                             obj (
                                 "sender" to message.sender,
                                 "content" to message.content,
                                 "timestamp" to TimeUtility.parseTimeStamp(message.time!!),
                                 "type" to message.type,
-                                "group" to message.group
+                                "group" to null
                             )
                         }
                     )
@@ -196,7 +221,7 @@ object Session {
 
                 ServerUtility.responseSuccess(routingContext, 200, json {
                     obj(
-                        "messages" to ret_sessions,
+                        "messages" to retSessions,
                         "count" to count
                     )
                 })
@@ -209,10 +234,100 @@ object Session {
         }
     }
 
+    //获取群组会话消息
+    @OptIn(DelicateCoroutinesApi::class)
+    val getGroupMessage = fun(routingContext : RoutingContext) {
+        GlobalScope.launch(coroutineContext) {
+            try {
+                //验证token
+                val me = AuthUtility.getUserId(routingContext)
+
+                val group = try {
+                    routingContext.pathParam("id")!!.toInt()
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                val session = try {
+                    sessiondao.getElementByKey(ConnectionPool.getPool(), me, group, true)!!
+                } catch (e: NullPointerException) {
+                    ServerUtility.responseError(routingContext, 404, 1, "会话不存在")
+                    return@launch
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                if (session.hidden!!) {
+                    ServerUtility.responseSuccess(routingContext, 200, json {
+                        obj(
+                            "messages" to JsonArray(),
+                            "unread" to 0
+                        )
+                    })
+                    return@launch
+                }
+
+                if (groupMemberDao.getGroupMember(ConnectionPool.getPool(), group, me) == null) {
+                    ServerUtility.responseError(routingContext, 403, 1, "没有权限")
+                    return@launch
+                }
+
+                //获取消息列表
+                val messages = try {
+                    messagedao
+                        .getElements(
+                            ConnectionPool.getPool(),
+                            "receiver = \$1 AND time > \$2 AND \"group\" = true",
+                            group,
+                            session.expire!!
+                        )
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    e.printStackTrace()
+                    return@launch
+                }
+
+                val retSessions = JsonArray()
+                val count = messages?.size ?: 0
+
+
+                messages?.forEach { message ->
+                    retSessions.add(
+                        json {
+                            obj(
+                                "sender" to message.sender,
+                                "content" to message.content,
+                                "timestamp" to TimeUtility.parseTimeStamp(message.time!!),
+                                "type" to message.type,
+                                "group" to message.receiver
+                            )
+                        }
+                    )
+                }
+
+                ServerUtility.responseSuccess(routingContext, 200, json {
+                    obj(
+                        "messages" to retSessions,
+                        "count" to count
+                    )
+                })
+            } catch (e: PgException) {
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                e.printStackTrace()
+            } catch (e: Exception) {
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                e.printStackTrace()
+            }
+        }
+    }
     //标记已读
     @OptIn(DelicateCoroutinesApi::class)
     val markSession = fun(routingContext : RoutingContext){
-        GlobalScope.launch {
+        GlobalScope.launch(coroutineContext) {
             try {
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -270,7 +385,7 @@ object Session {
     //删除会话
     @OptIn(DelicateCoroutinesApi::class)
     val delMessage = fun(routingContext : RoutingContext){
-        GlobalScope.launch {
+        GlobalScope.launch(coroutineContext) {
             try {
                 //验证token
                 val token = routingContext.request().getCookie("token")!!

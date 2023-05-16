@@ -10,6 +10,6 @@ data class MessageEntity(
     var receiver : Int?= null,
     var type : String?= null,
     var time : LocalDateTime?= null,
-    var group : Int?= null,
+    var group : Boolean?= null,
     var content : String?= null,
 )

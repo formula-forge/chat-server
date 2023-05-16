@@ -1,6 +1,5 @@
 package dao
 
-import dao.entities.MessageEntity
 import dao.entities.SessionEntity
 import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
@@ -74,10 +73,10 @@ class SessionDao : BaseDao<SessionEntity, Int>() {
         return composeRows(rows)
     }
 
-    suspend fun getElementByKey(connection: PgPool, userId: Int, target: Int): SessionEntity? {
+    suspend fun getElementByKey(connection: PgPool, userId: Int, target: Int, group: Boolean): SessionEntity? {
         val result = connection
-            .preparedQuery("SELECT * FROM %s WHERE id = \$1 AND target = \$2".format(tableName))
-            .execute(Tuple.of(userId, target)).await()
+            .preparedQuery("SELECT * FROM %s WHERE id = \$1 AND target = \$2 AND \"group\" = \$3".format(tableName))
+            .execute(Tuple.of(userId, target,group)).await()
         return if (result.size() == 0) null else rowMapper(result.first())
     }
 

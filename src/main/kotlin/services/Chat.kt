@@ -12,17 +12,22 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import utilities.AuthUtility
+import utilities.TimeUtility
 import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import kotlin.collections.set
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 object Chat {
     private val authedUsers = HashMap<Int,ServerWebSocket>()
     private val messageDao = MessageDao()
     private val sessionDao = SessionDao()
     private val friendDao = FriendDao()
-    private fun responseError(code : Int, msg : String, socket : ServerWebSocket){
+    private val groupMemberDao = GroupMemberDao()
+
+    var coroutineContext : CoroutineContext = EmptyCoroutineContext
+    private fun responseError(code : Int, msg : String, socket : ServerWebSocket) {
         try {
             socket.writeTextMessage(json {
                 obj (
@@ -36,66 +41,175 @@ object Chat {
         }
     }
 
+    private suspend fun updatePersonalSession(messageEntity: MessageEntity) {
+        var session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.sender!!, messageEntity.receiver!!, false)
+        if(session == null){
+            sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                userId = messageEntity.sender,
+                target = messageEntity.receiver,
+                unread = null,
+                group = false,
+                latest = messageEntity.time,
+                latest_msg = messageEntity.content
+            )
+            )
+        }
+        else{
+            sessionDao.updateElementByConditions(
+                ConnectionPool.getPool(),
+                "id = \$%d AND target = \$%d AND \"group\" = \$%d",
+                SessionEntity(
+                    userId = messageEntity.sender,
+                    target = messageEntity.receiver,
+                    unread = null,
+                    group = false,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content,
+                    hidden = false
+                ),
+                messageEntity.sender!!,
+                messageEntity.receiver!!,
+                false
+            )
+        }
+
+        session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.receiver!!, messageEntity.sender!!,false)
+        if(session == null){
+            sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                userId = messageEntity.receiver,
+                target = messageEntity.sender,
+                unread = 1,
+                group = false,
+                latest = messageEntity.time,
+                latest_msg = messageEntity.content,
+            )
+            )
+        }
+        else{
+            sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d AND \"group\" = \$%d" ,SessionEntity(
+                userId = messageEntity.receiver,
+                target = messageEntity.sender,
+                unread = session.unread!! + 1,
+                group = null,
+                latest = messageEntity.time,
+                latest_msg = messageEntity.content,
+                hidden = false
+            ),
+                messageEntity.receiver!!,
+                messageEntity.sender!!,
+                false
+            )
+        }
+    }
+
+    private suspend fun updateGroupSession(messageEntity: MessageEntity) {
+        val groupMemberList = groupMemberDao.getGroupMembers(ConnectionPool.getPool(), messageEntity.receiver!!)
+
+        for (groupMember in groupMemberList) {
+            var session = sessionDao.getElementByKey(ConnectionPool.getPool(), groupMember.userId!!, messageEntity.receiver!!, true)
+            if (session == null) {
+                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                    userId = groupMember.userId!!,
+                    target = messageEntity.receiver,
+                    unread = if (groupMember.userId == messageEntity.sender) null else 1,
+                    group = true,
+                    latest = messageEntity.time,
+                    latest_msg = messageEntity.content,
+                )
+                )
+            } else {
+                sessionDao.updateElementByConditions(
+                    ConnectionPool.getPool(),
+                    "id = \$%d AND target = \$%d AND \"group\" = \$%d",
+                    SessionEntity(
+                        userId = groupMember.userId,
+                        target = messageEntity.receiver,
+                        unread = if (groupMember.userId == messageEntity.sender) null else session.unread!! + 1,
+                        group = true,
+                        latest = messageEntity.time,
+                        latest_msg = messageEntity.content,
+                        hidden = false
+                    ),
+                    groupMember.userId!!,
+                    messageEntity.receiver!!,
+                    true
+                )
+            }
+        }
+    }
+
     private suspend fun storeMessage(messageEntity: MessageEntity){
         try {
             messageDao.insertElement(ConnectionPool.getPool(), messageEntity)
-            var session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.sender!!, messageEntity.receiver!!)
-            if(session == null){
-                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
-                    userId = messageEntity.sender,
-                    target = messageEntity.receiver,
-                    unread = null,
-                    group = null,
-                    latest = messageEntity.time,
-                    latest_msg = messageEntity.content
-                )
-                )
-            }
-            else{
-                sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d" ,SessionEntity(
-                    userId = messageEntity.sender,
-                    target = messageEntity.receiver,
-                    unread = null,
-                    group = null,
-                    latest = messageEntity.time,
-                    latest_msg = messageEntity.content,
-                    hidden = false
-                ),
-                    messageEntity.sender!!,
-                    messageEntity.receiver!!
-                )
-            }
-
-            session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.receiver!!, messageEntity.sender!!)
-            if(session == null){
-                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
-                    userId = messageEntity.receiver,
-                    target = messageEntity.sender,
-                    unread = 1,
-                    group = null,
-                    latest = messageEntity.time,
-                    latest_msg = messageEntity.content,
-                )
-                )
-            }
-            else{
-                sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d" ,SessionEntity(
-                    userId = messageEntity.receiver,
-                    target = messageEntity.sender,
-                    unread = session.unread!! + 1,
-                    group = null,
-                    latest = messageEntity.time,
-                    latest_msg = messageEntity.content,
-                    hidden = false
-                ),
-                    messageEntity.receiver!!,
-                    messageEntity.sender!!
-                )
-            }
+            if (messageEntity.group!!)
+                updateGroupSession(messageEntity)
+            else
+                updatePersonalSession(messageEntity)
         }
         catch (e : Exception){
             e.printStackTrace()
             throw Exception("数据库错误")
+        }
+    }
+
+    private fun writePersonalMessage(socket : ServerWebSocket, messageEntity: MessageEntity){
+        val targetSocket = authedUsers[messageEntity.receiver]
+        if (targetSocket == null || targetSocket.isClosed){
+            responseError(202,"目标用户不在线，消息转存",socket)
+            return
+        }
+
+        try{
+            targetSocket.writeTextMessage(json {
+                obj(
+                    "code" to 1,
+                    "message" to json{
+                        obj(
+                            "target" to messageEntity.receiver,
+                            "content" to messageEntity.content,
+                            "timestamp" to messageEntity.time?.let { TimeUtility.parseTimeStamp(it) },
+                            "group" to null,
+                            "type" to "text"
+                        )
+                    }
+                )
+            }.encode())
+        }
+        catch (e : Exception){
+            responseError(400,"消息传输错误",socket)
+        }
+    }
+
+    private suspend fun writeGroupMessage(socket: ServerWebSocket, messageEntity: MessageEntity){
+        val groupMemberList = try { groupMemberDao.getGroupMembers(ConnectionPool.getPool(), messageEntity.receiver!!) } catch (e : Exception){
+            responseError(400,"数据库错误",socket)
+            return
+        }
+
+        groupMemberList.forEach { member ->
+            if(member.userId == messageEntity.sender)
+                return@forEach
+            val targetSocket = authedUsers[member.userId]
+            if (targetSocket == null || targetSocket.isClosed)
+                return@forEach
+            try{
+                targetSocket.writeTextMessage( json {
+                    obj(
+                        "code" to 1,
+                        "message" to json{
+                            obj(
+                                "target" to messageEntity.sender,
+                                "content" to messageEntity.content,
+                                "timestamp" to messageEntity.time?.let { TimeUtility.parseTimeStamp(it) },
+                                "group" to messageEntity.receiver,
+                                "type" to "text"
+                            )
+                        }
+                    )
+                }.encode())
+            } catch (e : Exception){
+                responseError(400,"消息传输错误",socket)
+            }
         }
     }
 
@@ -107,88 +221,64 @@ object Chat {
         }
 
         val message = try {
-            req.getJsonObject("message")
+            req.getJsonObject("message")!!
         }
         catch (e : Exception){
             responseError(400,"请提供消息体",socket)
             return
         }
 
-        val target = try{
-            message.getInteger("target")
-        }
-        catch (e : Exception){
-            responseError(400,"请提供消息目标",socket)
+        val group : Boolean = message.getBoolean("group") ?: false
+
+        var target : Int? = message.getInteger("target")
+
+        val content : String? = message.getString("content")
+
+        val timestamp : Long? = message.getLong("timestamp")
+
+
+        if (target == null || content == null || timestamp == null){
+            responseError(400,"请提供完整的消息体",socket)
             return
         }
 
-        val content = try{
-            message.getString("content")
-        }
-        catch (e : Exception){
-            responseError(400,"请提供消息内容",socket)
-            return
-        }
+        GlobalScope.launch(coroutineContext) {
 
-        val timestamp = try {
-            message.getLong("timestamp")
-        }
-        catch (e : Exception){
-            responseError(400,"请提供消息时间戳",socket)
-            return
-        }
-
-        GlobalScope.launch {
-            val isFriend = try {
-                friendDao.checkFriendShip(ConnectionPool.getPool(),id,target)
+            val privilege = try {
+                if (!group)
+                    friendDao.checkFriendShip(ConnectionPool.getPool(),id,target)
+                else
+                    groupMemberDao.getGroupMember(ConnectionPool.getPool(),target,id) != null
             } catch (e : Exception){
                 responseError(500,"服务器错误",socket)
                 return@launch
             }
 
-            if (!isFriend){
-                responseError(403,"对方不是你的好友",socket)
+            if (!privilege){
+                responseError(403,"对方不是你的好友或不再群内",socket)
                 return@launch
             }
 
+            val messageEntity = MessageEntity(
+                sender = id,
+                receiver = target,
+                group = group,
+                type = "text",
+                time = TimeUtility.parseTime(timestamp),
+                content = content
+            )
+
             try {
-                storeMessage(MessageEntity(
-                    sender = id,
-                    receiver = target,
-                    type = "text",
-                    time = LocalDateTime.ofEpochSecond(timestamp/1000,(timestamp % 1000).toInt() * 1000000, ZoneOffset.ofHours(8)),
-                    content = content
-                ))
+                storeMessage(messageEntity)
             }
             catch (e : Exception){
                 responseError(500,"服务器错误",socket)
             }
 
-            val targetSocket = authedUsers[target]
-            if (targetSocket == null || targetSocket.isClosed){
-                responseError(202,"目标用户不在线，消息转存",socket)
-                return@launch
-            }
-
-            try{
-                targetSocket.writeTextMessage(json {
-                    obj(
-                        "code" to 1,
-                        "message" to json{
-                            obj(
-                                "target" to id,
-                                "content" to content,
-                                "timestamp" to timestamp,
-                                "group" to null,
-                                "type" to "text"
-                            )
-                        }
-                    )
-                }.encode())
-            }
-            catch (e : Exception){
-                responseError(400,"目标用户不在线",socket)
-            }
+            if (group)
+                writeGroupMessage(socket,messageEntity)
+            else
+                writePersonalMessage(socket,messageEntity)
 
             socket.writeTextMessage(json {
                 obj (

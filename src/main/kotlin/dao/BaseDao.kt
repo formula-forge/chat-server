@@ -34,9 +34,18 @@ abstract class BaseDao <T : Any, TKey : Any> {
         val result = HashMap<TKey,T>()
         if (keys.isEmpty())
             return result
+
+        val keyStr = keys.joinToString(",")
+
+        if (!(keys.first() is Int)){
+            throw RuntimeException("Not supported key type")
+        }
+
+        val keysI = keys as List<Int>
+
         val rows = connection
             .preparedQuery("SELECT * FROM %s WHERE \"%s\" = ANY($1)".format(tableName, keyName))
-            .execute(Tuple.of(keys)).await()
+            .execute(Tuple.of(keysI.toTypedArray())).await()
 
         rows.forEach{ row->
             val entity = rowMapper(row)
@@ -127,7 +136,7 @@ abstract class BaseDao <T : Any, TKey : Any> {
 
         for(p in rowMap){
             if(p.value.get(entity) != null){
-                updClause.append(p.key).append(" = \$").append(cnt++).append(",")
+                updClause.append("\"").append(p.key).append("\"").append(" = \$").append(cnt++).append(",")
                 valPrepared.add(p.value.get(entity)!!)
             }
         }
