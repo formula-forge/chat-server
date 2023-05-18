@@ -5,8 +5,6 @@ import dao.FriendAppDao
 import dao.FriendDao
 import dao.UserDao
 import dao.entities.FriendAppEntiiy
-import dao.entities.FriendEntity
-import dao.entities.UserEntity
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
@@ -16,57 +14,50 @@ import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonArray
 import utilities.AuthUtility
 import utilities.ServerUtility
-import java.lang.NumberFormatException
 import java.time.LocalDate
-import java.util.ServiceConfigurationError
 
 object Friend {
     private const val TYPE_POSTED = "posted"
 
     private const val TYPE_RECEIVED = "received"
 
-    val userdao = UserDao()
-    val frienddao = FriendDao()
-    val friendAppDao = FriendAppDao()
+    private val userDao = UserDao()
+    private val friendDao = FriendDao()
+    private val friendAppDao = FriendAppDao()
 
     //获取好友列表
     @OptIn(DelicateCoroutinesApi::class)
     val getFriends = fun(routingContext : RoutingContext) {
-        routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch {
-                try {
-                    //验证token
-                    val token = routingContext.request().getCookie("token")!!
-                    val subject = AuthUtility.verifyToken(token.value)!!
-                    val me = subject.getInteger("userId")!!
+        GlobalScope.launch {
+            try {
+                //验证token
+                val me = AuthUtility.getUserId(routingContext)
 
-                    val classification = routingContext.request().getParam("class")
+                val classification = routingContext.request().getParam("class")
 
-                    //获取好友列表
-                    var friends = try {
-                        frienddao.listFriends(ConnectionPool.getPool(), me)
-                    }
-                    catch (e : Exception){
-                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                        e.printStackTrace()
-                        return@launch
-                    }
-
-                    if (classification != null){
-                        friends = friends.filter { friend->friend.classification == classification }
-                    }
-
-                    //返回
-                    ServerUtility.responseSuccess(routingContext, 200, JsonObject().put("entries", friends).put("size", friends.size))
+                //获取好友列表
+                var friends = try {
+                    friendDao.listFriends(ConnectionPool.getPool(routingContext.vertx()), me)
                 }
                 catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
                     e.printStackTrace()
                     return@launch
                 }
+
+                if (classification != null){
+                    friends = friends.filter { friend->friend.classification == classification }
+                }
+
+                //返回
+                ServerUtility.responseSuccess(routingContext, 200, JsonObject().put("entries", friends).put("size", friends.size))
+            }
+            catch (e : Exception){
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
+                e.printStackTrace()
+                return@launch
             }
         }
     }
@@ -78,9 +69,7 @@ object Friend {
             GlobalScope.launch {
                 try {
                     //验证token
-                    val token = routingContext.request().getCookie("token")!!
-                    val subject = AuthUtility.verifyToken(token.value)!!
-                    val me = subject.getInteger("userId")!!
+                    val me = AuthUtility.getUserId(routingContext)
 
                     //获取参数
                     val req = try {
@@ -112,7 +101,7 @@ object Friend {
                     //发送好友申请
                     try {
                         friendAppDao.insertElement(
-                            ConnectionPool.getPool(),
+                            ConnectionPool.getPool(routingContext.vertx()),
                             FriendAppEntiiy(
                                 sender = me,
                                 receiver = friendId,
@@ -156,9 +145,7 @@ object Friend {
             GlobalScope.launch {
                 try {
                     //验证token
-                    val token = routingContext.request().getCookie("token")!!
-                    val subject = AuthUtility.verifyToken(token.value)!!
-                    val me = subject.getInteger("userId")!!
+                    val me = AuthUtility.getUserId(routingContext)
 
                     //获取参数
                     val req = try {
@@ -179,7 +166,7 @@ object Friend {
                     }
 
                     val friendUser = try {
-                        userdao.getElementByKey(ConnectionPool.getPool(), friendId)
+                        userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), friendId)
                     }
                     catch (e : Exception){
                         ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
@@ -209,7 +196,7 @@ object Friend {
                     if (appId != null){
                         //获取申请
                         val app = try {
-                            friendAppDao.getElementByKey(ConnectionPool.getPool(), appId)!!
+                            friendAppDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), appId)!!
                         }
                         catch (e : NullPointerException){
                             ServerUtility.responseError(routingContext, 404, 4, "申请id不存在")
@@ -231,7 +218,7 @@ object Friend {
 
                         //删除申请
                         try {
-                            friendAppDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d", FriendAppEntiiy(
+                            friendAppDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id = \$%d", FriendAppEntiiy(
                                 approved = true
                             ), appId)
                         }
@@ -249,7 +236,7 @@ object Friend {
 
                     //添加好友
                     try {
-                        frienddao.addFriend(ConnectionPool.getPool(), me, friendId, classification, nickname, reClass, reNickname)
+                        friendDao.addFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId, classification, nickname, reClass, reNickname)
                     }
                     catch (e : Exception){
                         //好友id不存在
@@ -306,29 +293,18 @@ object Friend {
                 //获取好友申请列表
                 try {
                     val posted = if (type == TYPE_RECEIVED) null else friendAppDao.getElementsByConditions(
-                        ConnectionPool.getPool(),
+                        ConnectionPool.getPool(routingContext.vertx()),
                         "sender = \$1 AND created_at > \$2",
                         me,
                         LocalDate.now().minusDays(expire.toLong())
                     )
 
                     val received = if (type == TYPE_POSTED) null else friendAppDao.getElementsByConditions(
-                        ConnectionPool.getPool(),
+                        ConnectionPool.getPool(routingContext.vertx()),
                         "receiver = \$1 AND created_at > \$2",
                         me,
                         LocalDate.now().minusDays(expire.toLong())
                     )
-
-//                    val itemMapping = fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
-//                        return json {
-//                            obj(
-//                                "appId" to item.value.id,
-//                                "sender" to item.value.sender,
-//                                "message" to item.value.message,
-//                                "approved" to item.value.approved
-//                            )
-//                        }
-//                    }
 
                     fun itemMapping(posted : Boolean): (Map.Entry<Int, FriendAppEntiiy>) -> JsonObject {
                         return fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
@@ -388,7 +364,7 @@ object Friend {
 
                 //删除好友
                 try {
-                    frienddao.delFriend(ConnectionPool.getPool(), me, friendId)
+                    friendDao.delFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId)
                 }
                 catch (e : Exception){
                      ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
@@ -414,9 +390,7 @@ object Friend {
             GlobalScope.launch {
                 try {
                     //验证token
-                    val token = routingContext.request().getCookie("token")!!
-                    val subject = AuthUtility.verifyToken(token.value)!!
-                    val me = subject.getInteger("userId")!!
+                    val me = AuthUtility.getUserId(routingContext)
 
                     //获取好友id
                     val friendId = try {
@@ -443,7 +417,7 @@ object Friend {
 
                     //修改好友信息
                     try {
-                        frienddao.updateFriend(ConnectionPool.getPool(), me, friendId, classification, nickname)
+                        friendDao.updateFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId, classification, nickname)
                     }
                     catch (e : Exception){
                         //其他错误

@@ -8,7 +8,10 @@ import io.vertx.sqlclient.PoolOptions
 
 object ConnectionPool {
     private var pool : PgPool? = null
-    fun connect(connectOptions: PgConnectOptions =
+
+    fun connect(
+        vertx: Vertx?,
+        connectOptions: PgConnectOptions =
                     PgConnectOptions()
                         .setPort(5432)
                         .setHost("172.17.182.41")
@@ -17,12 +20,12 @@ object ConnectionPool {
                         .setPassword("6WS+EgWG3wYoffqI")
     ) {
         val poolOptions : PoolOptions = PoolOptions().setMaxSize(20)
-        pool = PgPool.pool(connectOptions, poolOptions)
+        pool = PgPool.pool(vertx, connectOptions, poolOptions)
     }
 
-    fun getPool() : PgPool{
+    fun getPool(vertx: Vertx? = null) : PgPool{
         if (pool == null){
-            connect()
+            connect(vertx)
         }
         if (pool == null){
             throw Exception("Failed to connect the database.")

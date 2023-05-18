@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
+import io.vertx.kotlin.coroutines.dispatcher
 import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
@@ -30,8 +31,6 @@ object GroupSimp {
     private val groupMemberDao = GroupMemberDao()
     private val groupAppDao = GroupAppDao()
 
-    var coroutineContext : CoroutineContext = EmptyCoroutineContext
-
     private suspend fun isOwner(groupId: Int, me: Int) : Boolean {
         val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId)
         return group != null && group.owner == me
@@ -40,7 +39,7 @@ object GroupSimp {
     // 获取群组列表
     @OptIn(DelicateCoroutinesApi::class)
     val listGroup = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(context = coroutineContext) {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
 
@@ -76,7 +75,7 @@ object GroupSimp {
     // 获取群
     @OptIn(DelicateCoroutinesApi::class)
     val getGroup = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(context = coroutineContext) {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
 
@@ -123,7 +122,7 @@ object GroupSimp {
     @OptIn(DelicateCoroutinesApi::class)
     val createGroup = fun(routingContext: RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(context = coroutineContext){
+            GlobalScope.launch(routingContext.vertx().dispatcher()){
                 try {
                     // 验证token
                     val me = AuthUtility.getUserId(routingContext)
@@ -175,7 +174,7 @@ object GroupSimp {
     @OptIn(DelicateCoroutinesApi::class)
     val updateGroup = fun(routingContext: RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(context = coroutineContext){
+            GlobalScope.launch(routingContext.vertx().dispatcher()){
                 try {
                     val me = AuthUtility.getUserId(routingContext)
 
@@ -226,7 +225,7 @@ object GroupSimp {
     // 删除群组
     @OptIn(DelicateCoroutinesApi::class)
     val deleteGroup = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(context = coroutineContext){
+        GlobalScope.launch(routingContext.vertx().dispatcher()){
             try {
                 // 验证token
                 val me = AuthUtility.getUserId(routingContext)
@@ -267,7 +266,7 @@ object GroupSimp {
     // 获取成员列表
     @OptIn(DelicateCoroutinesApi::class)
     val getGroupMembers = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(context = coroutineContext){
+        GlobalScope.launch(routingContext.vertx().dispatcher()){
             try {
                 val me = AuthUtility.getUserId(routingContext)
                 // 获取群组id
@@ -315,7 +314,7 @@ object GroupSimp {
     @OptIn(DelicateCoroutinesApi::class)
     val addGroupMember = fun(routingContext: RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(context = coroutineContext){
+            GlobalScope.launch(routingContext.vertx().dispatcher()){
                 try {
                     val me = AuthUtility.getUserId(routingContext)
 
@@ -367,7 +366,7 @@ object GroupSimp {
     // 删除成员
     @OptIn(DelicateCoroutinesApi::class)
     val delGroupMember = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(context = coroutineContext){
+        GlobalScope.launch(routingContext.vertx().dispatcher()){
             try {
                 val me = AuthUtility.getUserId(routingContext)
                 

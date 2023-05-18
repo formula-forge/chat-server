@@ -3,11 +3,13 @@ package services
 import dao.*
 import dao.entities.MessageEntity
 import dao.entities.SessionEntity
+import io.vertx.core.Vertx
 import io.vertx.core.http.ServerWebSocket
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
+import io.vertx.kotlin.coroutines.dispatcher
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -26,6 +28,8 @@ object Chat {
     private val friendDao = FriendDao()
     private val groupMemberDao = GroupMemberDao()
 
+    var vertx : Vertx? = null
+
     var coroutineContext : CoroutineContext = EmptyCoroutineContext
     private fun responseError(code : Int, msg : String, socket : ServerWebSocket) {
         try {
@@ -42,9 +46,9 @@ object Chat {
     }
 
     private suspend fun updatePersonalSession(messageEntity: MessageEntity) {
-        var session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.sender!!, messageEntity.receiver!!, false)
+        var session = sessionDao.getElementByKey(ConnectionPool.getPool(vertx), messageEntity.sender!!, messageEntity.receiver!!, false)
         if(session == null){
-            sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+            sessionDao.insertElement(ConnectionPool.getPool(vertx), SessionEntity(
                 userId = messageEntity.sender,
                 target = messageEntity.receiver,
                 unread = null,
@@ -56,7 +60,7 @@ object Chat {
         }
         else{
             sessionDao.updateElementByConditions(
-                ConnectionPool.getPool(),
+                ConnectionPool.getPool(vertx),
                 "id = \$%d AND target = \$%d AND \"group\" = \$%d",
                 SessionEntity(
                     userId = messageEntity.sender,
@@ -73,9 +77,9 @@ object Chat {
             )
         }
 
-        session = sessionDao.getElementByKey(ConnectionPool.getPool(), messageEntity.receiver!!, messageEntity.sender!!,false)
+        session = sessionDao.getElementByKey(ConnectionPool.getPool(vertx), messageEntity.receiver!!, messageEntity.sender!!,false)
         if(session == null){
-            sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+            sessionDao.insertElement(ConnectionPool.getPool(vertx), SessionEntity(
                 userId = messageEntity.receiver,
                 target = messageEntity.sender,
                 unread = 1,
@@ -86,7 +90,7 @@ object Chat {
             )
         }
         else{
-            sessionDao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND target = \$%d AND \"group\" = \$%d" ,SessionEntity(
+            sessionDao.updateElementByConditions(ConnectionPool.getPool(vertx), "id = \$%d AND target = \$%d AND \"group\" = \$%d" ,SessionEntity(
                 userId = messageEntity.receiver,
                 target = messageEntity.sender,
                 unread = session.unread!! + 1,
@@ -103,12 +107,12 @@ object Chat {
     }
 
     private suspend fun updateGroupSession(messageEntity: MessageEntity) {
-        val groupMemberList = groupMemberDao.getGroupMembers(ConnectionPool.getPool(), messageEntity.receiver!!)
+        val groupMemberList = groupMemberDao.getGroupMembers(ConnectionPool.getPool(vertx), messageEntity.receiver!!)
 
         for (groupMember in groupMemberList) {
-            var session = sessionDao.getElementByKey(ConnectionPool.getPool(), groupMember.userId!!, messageEntity.receiver!!, true)
+            val session = sessionDao.getElementByKey(ConnectionPool.getPool(vertx), groupMember.userId!!, messageEntity.receiver!!, true)
             if (session == null) {
-                sessionDao.insertElement(ConnectionPool.getPool(), SessionEntity(
+                sessionDao.insertElement(ConnectionPool.getPool(vertx), SessionEntity(
                     userId = groupMember.userId!!,
                     target = messageEntity.receiver,
                     unread = if (groupMember.userId == messageEntity.sender) null else 1,
@@ -119,7 +123,7 @@ object Chat {
                 )
             } else {
                 sessionDao.updateElementByConditions(
-                    ConnectionPool.getPool(),
+                    ConnectionPool.getPool(vertx),
                     "id = \$%d AND target = \$%d AND \"group\" = \$%d",
                     SessionEntity(
                         userId = groupMember.userId,
@@ -140,7 +144,7 @@ object Chat {
 
     private suspend fun storeMessage(messageEntity: MessageEntity){
         try {
-            messageDao.insertElement(ConnectionPool.getPool(), messageEntity)
+            messageDao.insertElement(ConnectionPool.getPool(vertx), messageEntity)
             if (messageEntity.group!!)
                 updateGroupSession(messageEntity)
             else
@@ -181,7 +185,7 @@ object Chat {
     }
 
     private suspend fun writeGroupMessage(socket: ServerWebSocket, messageEntity: MessageEntity){
-        val groupMemberList = try { groupMemberDao.getGroupMembers(ConnectionPool.getPool(), messageEntity.receiver!!) } catch (e : Exception){
+        val groupMemberList = try { groupMemberDao.getGroupMembers(ConnectionPool.getPool(vertx), messageEntity.receiver!!) } catch (e : Exception){
             responseError(400,"数据库错误",socket)
             return
         }
@@ -230,7 +234,7 @@ object Chat {
 
         val group : Boolean = message.getBoolean("group") ?: false
 
-        var target : Int? = message.getInteger("target")
+        val target : Int? = message.getInteger("target")
 
         val content : String? = message.getString("content")
 
@@ -242,13 +246,13 @@ object Chat {
             return
         }
 
-        GlobalScope.launch(coroutineContext) {
+        GlobalScope.launch(vertx?.dispatcher() ?: EmptyCoroutineContext) {
 
             val privilege = try {
                 if (!group)
-                    friendDao.checkFriendShip(ConnectionPool.getPool(),id,target)
+                    friendDao.checkFriendShip(ConnectionPool.getPool(vertx),id,target)
                 else
-                    groupMemberDao.getGroupMember(ConnectionPool.getPool(),target,id) != null
+                    groupMemberDao.getGroupMember(ConnectionPool.getPool(vertx),target,id) != null
             } catch (e : Exception){
                 responseError(500,"服务器错误",socket)
                 return@launch
@@ -290,7 +294,7 @@ object Chat {
         }
     }
 
-    fun userAuth(req : JsonObject, socket: ServerWebSocket) : Int?{
+    private fun userAuth(req : JsonObject, socket: ServerWebSocket) : Int?{
         val token = try {
             req.getString("token")
         }

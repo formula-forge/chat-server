@@ -17,19 +17,15 @@ import java.time.ZoneOffset
 import kotlin.io.path.Path
 
 class MainVerticle : CoroutineVerticle() {
-    @OptIn(DelicateCoroutinesApi::class)
     override suspend fun start() {
         val server = vertx.createHttpServer()
 
         val mainRouter =  Router.router(vertx)
 
-        val fileSystem = vertx.fileSystem()
+        Image.fileSystem = vertx.fileSystem()
+        Image.path = Path("/var/images")
 
-        val image = services.Image(fileSystem, Path("/var/images"), vertx)
-
-        GroupSimp.coroutineContext = vertx.dispatcher()
         Chat.coroutineContext = vertx.dispatcher()
-        Session.coroutineContext = vertx.dispatcher()
 
         mainRouter.route().order(-30).handler(
             CorsHandler.create("*")
@@ -132,9 +128,11 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/group/:groupId/member").order(28).handler(GroupSimp.getGroupMembers)
         mainRouter.delete("/api/group/:groupId/member/:userId").order(29).handler(GroupSimp.delGroupMember)
 
-        mainRouter.post("/api/img").order(-5).handler(image.upload)
-        mainRouter.get("/img/:file").order(-6).handler(image.download)
+        mainRouter.post("/api/img").order(-5).handler(Image.upload)
+        mainRouter.get("/img/:file").order(-6).handler(Image.download)
+        mainRouter.get("/img/avatar/:type/:id").order(-4).handler(Image.avatar)
 
+        Chat.vertx = vertx
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)

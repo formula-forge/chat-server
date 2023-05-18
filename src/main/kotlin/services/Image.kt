@@ -1,5 +1,8 @@
 package services
 
+import dao.ConnectionPool
+import dao.GroupDao
+import dao.UserDao
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.file.FileSystem
 import io.vertx.core.file.OpenOptions
@@ -23,9 +26,40 @@ import java.security.MessageDigest
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
 import javax.imageio.stream.MemoryCacheImageOutputStream
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
-class Image(fileSystem: FileSystem, path : Path, vertx: io.vertx.core.Vertx) {
+object Image {
+    lateinit var fileSystem : FileSystem
+    lateinit var path : Path
+
     private val md5 = MessageDigest.getInstance("MD5")
+    private val userDao = UserDao()
+    private val groupDao = GroupDao()
+
+    private var default : Buffer? = null
+
+    private suspend fun responseDefault(routingContext : RoutingContext, code : Int){
+        if (default == null){
+            val file = path.resolve("default.png")
+            default = fileSystem.readFile(file.toString()).await()
+        }
+        routingContext.response().setStatusCode(code)
+        routingContext.response().putHeader("Content-Type", "image/png")
+        routingContext.response().end(default)
+    }
+
+    private suspend fun responseImage(routingContext : RoutingContext, fileName : String){
+        val file = path.resolve(fileName)
+        if (!fileSystem.exists(file.toString()).await()){
+            responseDefault(routingContext, 404)
+            return
+        }
+        val buffer = fileSystem.readFile(file.toString()).await()
+        routingContext.response().setStatusCode(200)
+        routingContext.response().putHeader("Content-Type", "image/png")
+        routingContext.response().end(buffer)
+    }
 
     @OptIn(DelicateCoroutinesApi::class)
     val upload = fun(routingContext: RoutingContext) {
@@ -36,13 +70,16 @@ class Image(fileSystem: FileSystem, path : Path, vertx: io.vertx.core.Vertx) {
             return
         }
         req.bodyHandler { buff->
-            GlobalScope.launch(vertx.dispatcher()) {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     val digestBytes = md5.digest(buff.bytes)
                     val fileNameBuilder = StringBuilder()
                     for(b in digestBytes){
                         fileNameBuilder.append(String.format("%02x", b))
                     }
+
+                    val fileHash = fileNameBuilder.toString()
+
                     fileNameBuilder.append(".png")
                     val file = path.resolve(fileNameBuilder.toString() )
                     if (!fileSystem.exists(file.toString()).await()) {
@@ -68,7 +105,7 @@ class Image(fileSystem: FileSystem, path : Path, vertx: io.vertx.core.Vertx) {
                     }
                     ServerUtility.responseSuccess(routingContext, 201, json {
                         obj(
-                            "url" to "/img/${fileNameBuilder.toString()}"
+                            "url" to fileHash
                         )
                     })
                 } catch (e : Exception){
@@ -81,27 +118,53 @@ class Image(fileSystem: FileSystem, path : Path, vertx: io.vertx.core.Vertx) {
 
     @OptIn(DelicateCoroutinesApi::class)
     val download = fun(routingContext: RoutingContext){
-        GlobalScope.launch {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val fileName = routingContext.pathParam("file")
                 if (fileName == null) {
                     ServerUtility.responseError(routingContext, 400, 1, "参数错误")
                     return@launch
                 }
-                var file = path.resolve(fileName)
-                if (!fileSystem.exists(file.toString()).await()) {
-                    routingContext.response().setStatusCode(404)
-                    file = path.resolve("default.png")
-                }
-
-                val resource = fileSystem.readFile(
-                    file.toString(),
-                ).await()
-
-                routingContext.response().putHeader("Content-Type", "image/png")
-                routingContext.response().end(resource)
+                responseImage(routingContext, fileName)
             } catch (e : Exception){
                 ServerUtility.responseError(routingContext, 500, 30, "服务器错误")
+                e.printStackTrace()
+            }
+        }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    val avatar = fun(routingContext: RoutingContext){
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
+            try {
+                val type = routingContext.pathParam("type")
+                val id = routingContext.pathParam("id")?.toIntOrNull()
+                if (id == null) {
+                    ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    return@launch
+                }
+
+                var fileName : String? = when (type) {
+                    "user" -> {
+                        userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), id)?.avatar
+                    }
+                    "group" -> {
+                        groupDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), id)?.avatar
+                    }
+                    else -> {
+                        ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                        return@launch
+                    }
+                }
+
+                if (fileName == null)
+                    ServerUtility.responseError(routingContext, 404, 1, "对象不存在")
+                else
+                    responseImage(routingContext, "$fileName.png")
+
+            } catch (e : Exception){
+                ServerUtility.responseError(routingContext, 500, 30, "服务器错误")
+                e.printStackTrace()
             }
         }
     }

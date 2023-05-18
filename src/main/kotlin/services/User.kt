@@ -10,37 +10,35 @@ import io.vertx.core.http.CookieSameSite
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
-import io.vertx.ext.web.*
+import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
+import io.vertx.kotlin.coroutines.dispatcher
 import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.mindrot.jbcrypt.BCrypt
 import utilities.AuthUtility
-
 import utilities.CheckUtility
 import utilities.MessageUtility
-import utilities.ServerUtility
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
-import java.lang.RuntimeException
 import java.text.ParseException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
 // 用户服务类
 object User {
-    val userdao = UserDao()
-    val frienddao = FriendDao()
+    private val userDao = UserDao()
+    private val friendDao = FriendDao()
 
     //新增用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val addUser = fun(routingContext: RoutingContext) {
         routingContext.response().putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
         routingContext.request().handler { buff ->
-            GlobalScope.launch {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     val req = buff.toJsonObject().map
 
@@ -88,7 +86,7 @@ object User {
 
                     //尝试插入数据库
                     try {
-                        userdao.insertElement(ConnectionPool.getPool(), user)
+                        userDao.insertElement(ConnectionPool.getPool(routingContext.vertx()), user)
                     } catch (e: Exception) {
                         //如果用户名已存在
                         if (e.message != null &&
@@ -103,8 +101,8 @@ object User {
                     }
 
                     //获取新增的用户
-                    val created = userdao
-                        .getElementsByConditions(ConnectionPool.getPool(), "username = \$1", name)
+                    val created = userDao
+                        .getElementsByConditions(ConnectionPool.getPool(routingContext.vertx()), "username = \$1", name)
 
                     //如果用户创建失败
                     if (created.isNullOrEmpty()) {
@@ -139,7 +137,7 @@ object User {
     //获取用户信息 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val getUser = fun(routingContext: RoutingContext) {
-        GlobalScope.launch {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 // 从请求中获取用户id
                 val rawId = routingContext.pathParam("id")
@@ -154,7 +152,7 @@ object User {
                         return@launch
                     }
 
-                println("Getting user ${userId}")
+                println("Getting user $userId")
 
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -174,7 +172,7 @@ object User {
                     friend = true
                 }
 
-                val user = userdao.getElementByKey(ConnectionPool.getPool(), userId)
+                val user = userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), userId)
 
                 if (user == null) {
                     responseError(routingContext, 404, 4, "用户不存在")
@@ -199,7 +197,7 @@ object User {
                 //如果不是自己
                 else {
                     friend = try {
-                        frienddao.checkFriendShip(ConnectionPool.getPool(), me, userId)
+                        friendDao.checkFriendShip(ConnectionPool.getPool(routingContext.vertx()), me, userId)
                     } catch (e: Exception) {
                         responseError(routingContext, 500, 30, "数据库错误")
                         return@launch
@@ -233,7 +231,7 @@ object User {
     @OptIn(DelicateCoroutinesApi::class)
     val updUser = fun(routingContext: RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
 //                     从请求中获取用户id
                     var userId: Int? = try {
@@ -242,12 +240,10 @@ object User {
                         responseError(routingContext, 400, 1, "参数不合法")
                         return@launch
                     }
-                    println("Updating user ${userId}")
+                    println("Updating user $userId")
 
                     //验证token
-                    val token = routingContext.request().getCookie("token")!!
-                    val subject = AuthUtility.verifyToken(token.value)!!
-                    val me = subject.getInteger("userId")!!
+                    val me = AuthUtility.getUserId(routingContext)
 
                     if (userId == null)
                         userId = me
@@ -297,7 +293,7 @@ object User {
                         user.protected = protected
 
                         try {
-                            userdao.updateElementByConditions(ConnectionPool.getPool(), "id=\$%d", user, userId)
+                            userDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id=\$%d", user, userId)
                         } catch (e: UnsupportedOperationException) {
                             responseError(routingContext, 400, 6, "无事可做")
                             return@launch
@@ -332,7 +328,7 @@ object User {
     //删除用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val delUser = fun(routingContext: RoutingContext) {
-        GlobalScope.launch {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 // 从请求中获取用户id
                 var userId: Int? = try {
@@ -342,7 +338,7 @@ object User {
                     return@launch
                 }
 
-                println("Deleting user ${userId}")
+                println("Deleting user $userId")
 
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -359,7 +355,7 @@ object User {
 
                 //开始删除用户
                 try {
-                    userdao.deleteElementByKey(ConnectionPool.getPool(), userId)
+                    userDao.deleteElementByKey(ConnectionPool.getPool(routingContext.vertx()), userId)
                 } catch (e: Exception) {
                     responseError(routingContext, 500, 30, "数据库错误")
                     return@launch
@@ -382,7 +378,7 @@ object User {
     //获取收藏公式
     @OptIn(DelicateCoroutinesApi::class)
     val getFavFormula = fun(routingContext: RoutingContext) {
-        GlobalScope.launch {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             // 验证token
             val token = routingContext.request().getCookie("token")!!
             val subject = AuthUtility.verifyToken(token.value)!!
@@ -390,18 +386,18 @@ object User {
 
             // 获取收藏公式
             try {
-                val user = userdao.getElementByKey(ConnectionPool.getPool(), me)
+                val user = userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), me)
                 val fav = user!!.favFormula
-                ServerUtility.responseSuccess(routingContext, 200, json { obj("formula" to fav) })
+                responseSuccess(routingContext, 200, json { obj("formula" to fav) })
             } catch (e: NullPointerException) {
-                ServerUtility.responseError(routingContext, 404, 4, "用户不存在")
+                responseError(routingContext, 404, 4, "用户不存在")
                 return@launch
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                responseError(routingContext, 500, 30, "数据库错误" + e.message)
                 e.printStackTrace()
                 return@launch
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器错误")
+                responseError(routingContext, 500, 30, "服务器错误")
                 e.printStackTrace()
                 return@launch
             }
@@ -413,7 +409,7 @@ object User {
     @OptIn(DelicateCoroutinesApi::class)
     val updateFavFormula = fun(routingContext: RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 // 验证token
                 val token = routingContext.request().getCookie("token")!!
                 val subject = AuthUtility.verifyToken(token.value)!!
@@ -421,22 +417,22 @@ object User {
 
                 // 获取收藏公式
                 try {
-                    userdao.updateElementByConditions(
-                        ConnectionPool.getPool(),
+                    userDao.updateElementByConditions(
+                        ConnectionPool.getPool(routingContext.vertx()),
                         "id=\$%d",
                         UserEntity(favFormula = buff.toJsonObject()),
                         me
                     )
-                    ServerUtility.responseSuccess(routingContext, 200)
+                    responseSuccess(routingContext, 200)
                 } catch (e: NullPointerException) {
-                    ServerUtility.responseError(routingContext, 404, 4, "用户不存在")
+                    responseError(routingContext, 404, 4, "用户不存在")
                     return@launch
                 } catch (e: PgException) {
-                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                    responseError(routingContext, 500, 30, "数据库错误" + e.message)
                     e.printStackTrace()
                     return@launch
                 } catch (e: Exception) {
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器错误")
+                    responseError(routingContext, 500, 30, "服务器错误")
                     e.printStackTrace()
                     return@launch
                 }
@@ -450,14 +446,14 @@ object User {
     val login = fun(routingContext: RoutingContext) {
         routingContext.response().putHeader("content-type", "application/json")
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     val req = buff.toJsonObject().map
 
-                    val userName = req.get("username") as String?
-                    val phone = req.get("phone") as String?
-                    val password = req.get("password") as String?
-                    val code : Int? = (req.get("code") as String?)?.toIntOrNull()
+                    val userName = req["username"] as String?
+                    val phone = req["phone"] as String?
+                    val password = req["password"] as String?
+                    val code : Int? = (req["code"] as String?)?.toIntOrNull()
 
                     if ((userName == null && phone == null) || (password == null && code == null) || (phone == null && code != null))  {
                         responseError(routingContext, 400, 10, "参数不完整")
@@ -465,9 +461,9 @@ object User {
                     }
 
                     try {
-                        val userRow = userdao
+                        val userRow = userDao
                             .getElementsByConditions(
-                                ConnectionPool.getPool(),
+                                ConnectionPool.getPool(routingContext.vertx()),
                                 "username = \$1 or phone = \$2",
                                 userName ?: "",
                                 phone ?: ""
@@ -524,7 +520,6 @@ object User {
     }
 
     //登出 Handler
-    @OptIn(DelicateCoroutinesApi::class)
     val logout = fun(routingContext: RoutingContext) {
         routingContext.response().removeCookie("token").setPath("/").setSameSite(CookieSameSite.NONE).setSecure(true)
         routingContext.response().end(
@@ -536,7 +531,7 @@ object User {
     @OptIn(DelicateCoroutinesApi::class)
     val getSMS = fun(routingContext: RoutingContext) {
         routingContext.response().putHeader("content-type", "application/json")
-        GlobalScope.launch {
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val phone = routingContext.request().getParam("phone")
 
@@ -571,7 +566,7 @@ object User {
     @OptIn(DelicateCoroutinesApi::class)
     val updPassword = fun(routingContext : RoutingContext) {
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch {
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     //获取用户id
                     val id = routingContext.pathParam("id")!!.toInt()
@@ -591,7 +586,7 @@ object User {
                     }
 
                     //更新密码
-                    userdao.updateElementByConditions(ConnectionPool.getPool(), "id = \$%d AND phone = \$%d", UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())), id, phone)
+                    userDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id = \$%d AND phone = \$%d", UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())), id, phone)
 
                     responseSuccess(routingContext, 200)
                 } catch (e: NullPointerException) {
