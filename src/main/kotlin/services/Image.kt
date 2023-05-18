@@ -4,6 +4,7 @@ import io.vertx.core.buffer.Buffer
 import io.vertx.core.file.FileSystem
 import io.vertx.core.file.OpenOptions
 import io.vertx.ext.web.RoutingContext
+import io.vertx.ext.web.multipart.MultipartForm
 import io.vertx.kotlin.core.Vertx
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj

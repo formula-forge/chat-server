@@ -46,10 +46,10 @@ class SessionDao : BaseDao<SessionEntity, Int>() {
         throw UnsupportedOperationException("Unsupported key type")
     }
 
-    suspend fun deleteElementByKey(connection: PgPool, userId: Int, target: Int) {
+    suspend fun deleteElementByKey(connection: PgPool, userId: Int, target: Int, group: Boolean) {
         connection
-            .preparedQuery("DELETE FROM %s WHERE id = \$1 AND target = \$2".format(tableName))
-            .execute(Tuple.of(userId, target)).await()
+            .preparedQuery("DELETE FROM %s WHERE id = \$1 AND target = \$2 AND \"group\" = \$3".format(tableName))
+            .execute(Tuple.of(userId, target,group)).await()
     }
 
     private fun composeRows(rows : RowSet<Row>) : List<SessionEntity>?{

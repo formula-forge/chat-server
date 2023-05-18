@@ -85,8 +85,13 @@ object Session {
                         if(session.group!!){
                             //群聊
                             val group = session.target!!
-                            if(!groupMap.containsKey(group))
+
+                            if (groupMemberDao.getGroupMember(ConnectionPool.getPool(), group, me) == null){
+                                //不在群里了
+                                sessiondao.deleteElementByKey(ConnectionPool.getPool(), me, group, true)
                                 return@forEach
+                            }
+
                             retSessions.add(
                                 json {
                                     obj(
@@ -100,11 +105,15 @@ object Session {
                                     )
                                 }
                             )
+                            totUnread += session.unread!!
                         } else{
                             //私聊
                             val id = session.target!!
-                            if(!groupMap.containsKey(id))
+                            if (!friendMap.containsKey(id)){
+                                //对方已经不是好友了
+                                sessiondao.deleteElementByKey(ConnectionPool.getPool(), me, id, false)
                                 return@forEach
+                            }
                             retSessions.add(
                                 json {
                                     obj (
@@ -163,7 +172,7 @@ object Session {
                     return@launch
                 }
 
-                if (friendao.checkFriendShip(ConnectionPool.getPool(), me, target)){
+                if (!friendao.checkFriendShip(ConnectionPool.getPool(), me, target)){
                     ServerUtility.responseError(routingContext, 403, 1, "没有权限")
                     return@launch
                 }

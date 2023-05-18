@@ -31,7 +31,7 @@ class MainVerticle : CoroutineVerticle() {
         Chat.coroutineContext = vertx.dispatcher()
         Session.coroutineContext = vertx.dispatcher()
 
-        mainRouter.route().order(-3).handler(
+        mainRouter.route().order(-30).handler(
             CorsHandler.create("*")
                 .allowedMethod(HttpMethod.GET)
                 .allowedMethod(HttpMethod.POST)
@@ -40,9 +40,13 @@ class MainVerticle : CoroutineVerticle() {
                 .allowedMethod(HttpMethod.PUT)
                 .allowedHeader("Cookie")
                 .allowedHeader("X-PINGARUNER")
-                .allowedHeader("Content-Type")
                 .allowCredentials(true)
+                .allowedHeader("Access-Control-Allow-Headers")
+                .allowedHeader("Authorization")
+                .allowedHeader("Access-Control-Allow-Method")
                 .allowedHeader("Access-Control-Allow-Origin")
+                .allowedHeader("Access-Control-Allow-Credentials")
+                .allowedHeader("Content-Type")
         )
 
         mainRouter.post("/api/hello").order(-1).handler {
