@@ -1,8 +1,8 @@
 package dao
 
 import io.vertx.core.Vertx
+import org.slf4j.LoggerFactory
 import io.vertx.pgclient.PgConnectOptions
-import io.vertx.pgclient.PgConnection
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.PoolOptions
 
@@ -19,8 +19,16 @@ object ConnectionPool {
                         .setUser("chatex")
                         .setPassword("6WS+EgWG3wYoffqI")
     ) {
-        val poolOptions : PoolOptions = PoolOptions().setMaxSize(20)
-        pool = PgPool.pool(vertx, connectOptions, poolOptions)
+        val logger = LoggerFactory.getLogger(this::class.java)
+
+        logger.info("Connecting to the database...")
+
+        try {
+            val poolOptions : PoolOptions = PoolOptions().setMaxSize(20)
+            pool = PgPool.pool(vertx, connectOptions, poolOptions)
+        } catch (e: Exception) {
+            logger.error("Failed to connect the database.", e)
+        }
     }
 
     fun getPool(vertx: Vertx? = null) : PgPool{

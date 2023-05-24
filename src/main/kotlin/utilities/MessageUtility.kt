@@ -5,9 +5,9 @@ import com.aliyun.auth.credentials.Credential
 import com.aliyun.auth.credentials.provider.StaticCredentialProvider
 import com.aliyun.sdk.service.dysmsapi20170525.AsyncClient
 import com.aliyun.sdk.service.dysmsapi20170525.models.SendSmsRequest
-import com.google.common.cache.*
+import com.google.common.cache.CacheBuilder
 import darabonba.core.client.ClientOverrideConfiguration
-import java.lang.IllegalArgumentException
+import org.slf4j.Logger
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -16,29 +16,34 @@ import kotlin.random.Random
 import kotlin.random.nextUInt
 
 object MessageUtility {
-    val codeCache = CacheBuilder.newBuilder()
+    var accessKeySecret = "Fxev"
+
+    var accessKeyId = "LTAI"
+
+    private val codeCache = CacheBuilder.newBuilder()
         .expireAfterWrite(5, TimeUnit.MINUTES)
         .build<String, code>()
 
-    val credentialProvider = StaticCredentialProvider.create(
-        Credential
-            .builder()
-            .accessKeyId("LTAI5tGg9iA8mWcVZoqYacKt")
-            .accessKeySecret("Fxev9oNw3LbLByBUM7P1cLyu85Rl0q")
-            .build()
-    )
 
-    val client = AsyncClient.builder()
-        .region("cn-hangzhou")
-        .credentialsProvider(credentialProvider)
-        .overrideConfiguration(
-            ClientOverrideConfiguration.create()
-                .setEndpointOverride("dysmsapi.aliyuncs.com")
-                .setConnectTimeout(Duration.ofSeconds(5))
+    fun sendCode(phone : String, logger : Logger){
+        val credentialProvider = StaticCredentialProvider.create(
+            Credential
+                .builder()
+                .accessKeyId(accessKeyId)
+                .accessKeySecret(accessKeySecret)
+                .build()
         )
-        .build()
 
-    fun sendCode(phone : String){
+        val client = AsyncClient.builder()
+            .region("cn-hangzhou")
+            .credentialsProvider(credentialProvider)
+            .overrideConfiguration(
+                ClientOverrideConfiguration.create()
+                    .setEndpointOverride("dysmsapi.aliyuncs.com")
+                    .setConnectTimeout(Duration.ofSeconds(5))
+            )
+            .build()
+
         if(!CheckUtility.checkPhone(phone)){
             throw IllegalArgumentException("phone number is illegal")
         }
@@ -50,7 +55,7 @@ object MessageUtility {
             codeCache.invalidate(phone)
             val wait = Duration.ofMinutes(1) - Duration.between(existed.time, LocalDateTime.now(ZoneOffset.ofHours(8)))
 
-            if (wait.isPositive){
+            if (wait > Duration.ZERO){
                 throw TooManyRequestException("too many request", wait.toSeconds())
             }
         }
@@ -64,9 +69,8 @@ object MessageUtility {
 
         val response = client.sendSms(smsRequest)
 
-        println(response.get().toMap())
+        logger.info("send code $code to $phone with result ${response.get().toMap()}")
 
-        println("send code $code to $phone")
         codeCache.put(phone, code(phone, code.toInt(), LocalDateTime.now(ZoneOffset.ofHours(8))))
     }
 

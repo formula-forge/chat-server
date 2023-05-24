@@ -14,9 +14,11 @@ import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import utilities.AuthUtility
 import utilities.ServerUtility
 import java.time.LocalDate
+
 
 object Friend {
     private const val TYPE_POSTED = "posted"
@@ -29,7 +31,8 @@ object Friend {
 
     //获取好友列表
     @OptIn(DelicateCoroutinesApi::class)
-    val getFriends = fun(routingContext : RoutingContext) {
+    val getFriends = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "getFriends")
         GlobalScope.launch {
             try {
                 //验证token
@@ -40,23 +43,23 @@ object Friend {
                 //获取好友列表
                 var friends = try {
                     friendDao.listFriends(ConnectionPool.getPool(routingContext.vertx()), me)
-                }
-                catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                    e.printStackTrace()
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 
-                if (classification != null){
-                    friends = friends.filter { friend->friend.classification == classification }
+                if (classification != null) {
+                    friends = friends.filter { friend -> friend.classification == classification }
                 }
 
                 //返回
-                ServerUtility.responseSuccess(routingContext, 200, JsonObject().put("entries", friends).put("size", friends.size))
-            }
-            catch (e : Exception){
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                e.printStackTrace()
+                ServerUtility.responseSuccess(
+                    routingContext, 200, JsonObject().put("entries", friends).put("size", friends.size), logger
+                )
+            } catch (e: Exception) {
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                logger.warn(e.message, e)
                 return@launch
             }
         }
@@ -64,8 +67,9 @@ object Friend {
 
     //发送好友申请
     @OptIn(DelicateCoroutinesApi::class)
-    val applyFriend = fun(routingContext : RoutingContext) {
-        routingContext.request().bodyHandler { buff->
+    val applyFriend = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "applyFriend")
+        routingContext.request().bodyHandler { buff ->
             GlobalScope.launch {
                 try {
                     //验证token
@@ -74,18 +78,16 @@ object Friend {
                     //获取参数
                     val req = try {
                         buff.toJsonObject().map
-                    }
-                    catch (e : DecodeException){
-                        ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    } catch (e: DecodeException) {
+                        ServerUtility.responseError(routingContext, 400, 1, "参数错误", logger)
                         return@launch
                     }
 
                     //获取好友id
                     val friendId = try {
                         req["receiver"] as Int
-                    }
-                    catch (e: ClassCastException){
-                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id")
+                    } catch (e: ClassCastException) {
+                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id", logger)
                         return@launch
                     }
 
@@ -101,8 +103,7 @@ object Friend {
                     //发送好友申请
                     try {
                         friendAppDao.insertElement(
-                            ConnectionPool.getPool(routingContext.vertx()),
-                            FriendAppEntiiy(
+                            ConnectionPool.getPool(routingContext.vertx()), FriendAppEntiiy(
                                 sender = me,
                                 receiver = friendId,
                                 classification = classification,
@@ -112,26 +113,22 @@ object Friend {
                             )
                         )
 
-                        ServerUtility.responseSuccess(routingContext, 200)
-                    }
-                    catch (e : PgException){
-                        if (e.message != null && e.message!!.contains("foreign key constraint")){
-                            ServerUtility.responseError(routingContext, 404, 4, "好友id不存在")
-                        }
-                        else {
-                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                            e.printStackTrace()
+                        ServerUtility.responseSuccess(routingContext, 200, logger = logger)
+                    } catch (e: PgException) {
+                        if (e.message != null && e.message!!.contains("foreign key constraint")) {
+                            ServerUtility.responseError(routingContext, 404, 4, "好友id不存在", logger)
+                        } else {
+                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                            logger.warn(e.message, e)
                         }
                         return@launch
                     }
-                }
-                catch (e : ClassCastException){
-                    ServerUtility.responseError(routingContext, 400, 1, "缺少参数")
+                } catch (e: ClassCastException) {
+                    ServerUtility.responseError(routingContext, 400, 1, "缺少参数", logger)
                     return@launch
-                }
-                catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                    e.printStackTrace()
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
             }
@@ -140,7 +137,8 @@ object Friend {
 
     //添加好友
     @OptIn(DelicateCoroutinesApi::class)
-    val addFriend = fun(routingContext : RoutingContext) {
+    val addFriend = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "addFriend")
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch {
                 try {
@@ -150,81 +148,77 @@ object Friend {
                     //获取参数
                     val req = try {
                         buff.toJsonObject().map
-                    }
-                    catch (e : DecodeException){
-                        ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    } catch (e: DecodeException) {
+                        ServerUtility.responseError(routingContext, 400, 1, "参数错误", logger)
                         return@launch
                     }
 
                     //获取好友id
                     val friendId = try {
                         req["userId"] as Int
-                    }
-                    catch (e: ClassCastException){
-                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id")
+                    } catch (e: ClassCastException) {
+                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id", logger)
                         return@launch
                     }
 
                     val friendUser = try {
                         userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), friendId)
-                    }
-                    catch (e : Exception){
-                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                        e.printStackTrace()
+                    } catch (e: Exception) {
+                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                        logger.warn(e.message, e)
                         return@launch
                     }
 
-                    if (friendUser == null){
-                        ServerUtility.responseError(routingContext, 404, 4, "好友id不存在")
+                    if (friendUser == null) {
+                        ServerUtility.responseError(routingContext, 404, 4, "好友id不存在", logger)
                         return@launch
                     }
 
                     var reClass: String? = null
                     var reNickname: String? = null
 
-                    val appId: Int? = try { req["application"] as Int? }
-                    catch (e : Exception){
-                        e.printStackTrace()
+                    val appId: Int? = try {
+                        req["application"] as Int?
+                    } catch (e: Exception) {
                         null
                     }
 
-                    if(friendUser.protected!! && appId ==null){
-                        ServerUtility.responseError(routingContext, 400, 1, "需要提供申请id")
+                    if (friendUser.protected!! && appId == null) {
+                        ServerUtility.responseError(routingContext, 400, 1, "需要提供申请id", logger)
                         return@launch
                     }
 
-                    if (appId != null){
+                    if (appId != null) {
                         //获取申请
                         val app = try {
                             friendAppDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), appId)!!
-                        }
-                        catch (e : NullPointerException){
-                            ServerUtility.responseError(routingContext, 404, 4, "申请id不存在")
+                        } catch (e: NullPointerException) {
+                            ServerUtility.responseError(routingContext, 404, 4, "申请id不存在", logger)
                             return@launch
-                        }
-                        catch (e : Exception){
-                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                            e.printStackTrace()
+                        } catch (e: Exception) {
+                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                            logger.warn(e.message, e)
                             return@launch
                         }
 
                         reClass = app.classification
                         reNickname = app.nickname
 
-                        if (app.receiver != me || app.sender != friendId){
-                            ServerUtility.responseError(routingContext, 403, 2, "权限不足")
+                        if (app.receiver != me || app.sender != friendId) {
+                            ServerUtility.responseError(routingContext, 403, 2, "权限不足", logger)
                             return@launch
                         }
 
                         //删除申请
                         try {
-                            friendAppDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id = \$%d", FriendAppEntiiy(
-                                approved = true
-                            ), appId)
-                        }
-                        catch (e : Exception){
-                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                            e.printStackTrace()
+                            friendAppDao.updateElementByConditions(
+                                ConnectionPool.getPool(routingContext.vertx()), "id = \$%d", FriendAppEntiiy(
+                                    approved = true
+                                ), appId
+                            )
+                        } catch (e: Exception) {
+                            ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                            logger.warn(e.message, e)
                             return@launch
                         }
                     }
@@ -236,33 +230,37 @@ object Friend {
 
                     //添加好友
                     try {
-                        friendDao.addFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId, classification, nickname, reClass, reNickname)
-                    }
-                    catch (e : Exception){
+                        friendDao.addFriend(
+                            ConnectionPool.getPool(routingContext.vertx()),
+                            me,
+                            friendId,
+                            classification,
+                            nickname,
+                            reClass,
+                            reNickname
+                        )
+                    } catch (e: Exception) {
                         //好友id不存在
-                        if (e.message!= null &&
-                            e.message!!.contains("violates foreign key constraint")) {
-                            ServerUtility.responseError(routingContext, 404, 4, "好友id不存在")
+                        if (e.message != null && e.message!!.contains("violates foreign key constraint")) {
+                            ServerUtility.responseError(routingContext, 404, 4, "好友id不存在", logger)
                             return@launch
                         }
                         //已经是好友
-                        if (e.message!= null &&
-                            e.message!!.contains("duplicate key")) {
-                            ServerUtility.responseError(routingContext, 400, 7, "已经是好友")
+                        if (e.message != null && e.message!!.contains("duplicate key")) {
+                            ServerUtility.responseError(routingContext, 400, 7, "已经是好友", logger)
                             return@launch
                         }
                         //其他错误
-                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                        e.printStackTrace()
+                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                        logger.warn(e.message, e)
                         return@launch
                     }
 
                     //返回
-                    ServerUtility.responseSuccess(routingContext, 201, null)
-                }
-                catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                    e.printStackTrace()
+                    ServerUtility.responseSuccess(routingContext, 201, null, logger)
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
             }
@@ -271,19 +269,19 @@ object Friend {
 
     //获取好友申请列表
     @OptIn(DelicateCoroutinesApi::class)
-    val listFriendApp = fun(routingContext : RoutingContext) {
+    val listFriendApp = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "listFriendApp")
         GlobalScope.launch {
             try {
                 //获取过期时间
-                val expire : Int = try {
+                val expire: Int = try {
                     routingContext.request().getParam("expire")?.toInt() ?: 30
-                }
-                catch (e : NumberFormatException){
-                    ServerUtility.responseError(routingContext, 400, 1, "过期时间格式错误")
+                } catch (e: NumberFormatException) {
+                    ServerUtility.responseError(routingContext, 400, 1, "过期时间格式错误", logger)
                     return@launch
                 }
 
-                val type : String = routingContext.request().getParam("type") ?: "both"
+                val type: String = routingContext.request().getParam("type") ?: "both"
 
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -306,8 +304,8 @@ object Friend {
                         LocalDate.now().minusDays(expire.toLong())
                     )
 
-                    fun itemMapping(posted : Boolean): (Map.Entry<Int, FriendAppEntiiy>) -> JsonObject {
-                        return fun(item : Map.Entry<Int, FriendAppEntiiy>) : JsonObject{
+                    fun itemMapping(posted: Boolean): (Map.Entry<Int, FriendAppEntiiy>) -> JsonObject {
+                        return fun(item: Map.Entry<Int, FriendAppEntiiy>): JsonObject {
                             val result = json {
                                 obj(
                                     "appId" to item.value.id,
@@ -322,22 +320,22 @@ object Friend {
                     }
 
                     //返回
-                    ServerUtility.responseSuccess(routingContext, 200, json {
-                        obj(
-                            "posted" to posted?.map(itemMapping(true)) ,
-                            "received" to received?.map(itemMapping(false))
-                        )
-                    })
-                }
-                catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                    e.printStackTrace()
+                    ServerUtility.responseSuccess(
+                        routingContext, 200, json {
+                            obj(
+                                "posted" to posted?.map(itemMapping(true)),
+                                "received" to received?.map(itemMapping(false))
+                            )
+                        }, logger
+                    )
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
-            }
-            catch (e : Exception){
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                e.printStackTrace()
+            } catch (e: Exception) {
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                logger.warn(e.message, e)
                 return@launch
             }
         }
@@ -345,7 +343,8 @@ object Friend {
 
     //删除好友
     @OptIn(DelicateCoroutinesApi::class)
-    val delFriend = fun(routingContext : RoutingContext) {
+    val delFriend = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "delFriend")
         GlobalScope.launch {
             try {
                 //验证token
@@ -356,28 +355,25 @@ object Friend {
                 //获取好友id
                 val friendId = try {
                     routingContext.pathParam("id").toInt()
-                }
-                catch (e: Exception){
-                    ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id")
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id", logger)
                     return@launch
                 }
 
                 //删除好友
                 try {
                     friendDao.delFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId)
-                }
-                catch (e : Exception){
-                     ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                    e.printStackTrace()
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 
                 //返回
-                ServerUtility.responseSuccess(routingContext, 200, null)
-            }
-            catch (e : Exception){
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                e.printStackTrace()
+                ServerUtility.responseSuccess(routingContext, 200, null, logger)
+            } catch (e: Exception) {
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                logger.warn(e.message, e)
                 return@launch
             }
         }
@@ -385,8 +381,9 @@ object Friend {
 
     //修改好友信息
     @OptIn(DelicateCoroutinesApi::class)
-    val updFriend = fun(routingContext : RoutingContext) {
-        routingContext.request().bodyHandler { buff->
+    val updFriend = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "updFriend")
+        routingContext.request().bodyHandler { buff ->
             GlobalScope.launch {
                 try {
                     //验证token
@@ -395,18 +392,16 @@ object Friend {
                     //获取好友id
                     val friendId = try {
                         routingContext.pathParam("id").toInt()
-                    }
-                    catch (e: Exception){
-                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id")
+                    } catch (e: Exception) {
+                        ServerUtility.responseError(routingContext, 400, 1, "需要提供好友id", logger)
                         return@launch
                     }
 
                     //获取参数
                     val req = try {
                         buff.toJsonObject().map
-                    }
-                    catch (e : DecodeException){
-                        ServerUtility.responseError(routingContext, 400, 1, "参数错误")
+                    } catch (e: DecodeException) {
+                        ServerUtility.responseError(routingContext, 400, 1, "参数错误", logger)
                         return@launch
                     }
 
@@ -417,21 +412,21 @@ object Friend {
 
                     //修改好友信息
                     try {
-                        friendDao.updateFriend(ConnectionPool.getPool(routingContext.vertx()), me, friendId, classification, nickname)
-                    }
-                    catch (e : Exception){
+                        friendDao.updateFriend(
+                            ConnectionPool.getPool(routingContext.vertx()), me, friendId, classification, nickname
+                        )
+                    } catch (e: Exception) {
                         //其他错误
-                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                        e.printStackTrace()
+                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                        logger.warn(e.message, e)
                         return@launch
                     }
 
                     //返回
-                    ServerUtility.responseSuccess(routingContext, 200, null)
-                }
-                catch (e : Exception){
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message)
-                    e.printStackTrace()
+                    ServerUtility.responseSuccess(routingContext, 200, null, logger)
+                } catch (e: Exception) {
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
             }

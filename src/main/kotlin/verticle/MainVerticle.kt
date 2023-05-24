@@ -1,49 +1,139 @@
 package verticle
 
-import io.vertx.core.buffer.Buffer
+import dao.ConnectionPool
+import io.vertx.config.ConfigRetriever
+import io.vertx.config.ConfigRetrieverOptions
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.http.HttpMethod
 import io.vertx.ext.web.Router
 import io.vertx.ext.web.handler.CorsHandler
+import io.vertx.kotlin.config.configStoreOptionsOf
+import io.vertx.kotlin.core.json.json
+import io.vertx.kotlin.core.json.obj
 import io.vertx.kotlin.coroutines.CoroutineVerticle
+import io.vertx.kotlin.coroutines.await
 import io.vertx.kotlin.coroutines.dispatcher
-import kotlinx.coroutines.DelicateCoroutinesApi
+import io.vertx.kotlin.pgclient.pgConnectOptionsOf
+import org.slf4j.LoggerFactory
 import services.*
 import utilities.AuthUtility
+import utilities.MessageUtility
 import utilities.ServerUtility
-import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.io.path.Path
 
+
 class MainVerticle : CoroutineVerticle() {
     override suspend fun start() {
+        val fh = java.util.logging.FileHandler("log.txt")
+        val ch = java.util.logging.ConsoleHandler()
+        java.util.logging.Logger.getLogger("")
+            .addHandler(fh)
+        java.util.logging.Logger.getLogger("")
+            .addHandler(ch)
+
+        val logger = LoggerFactory.getLogger(this::class.java)
+        val store = configStoreOptionsOf(
+            type = "file",
+            format = "yaml",
+            config = json {
+                obj(
+                    "path" to "/etc/chat-server/config.yaml"
+                )
+            }
+        )
+
+        val retrieverOptions = ConfigRetrieverOptions()
+            .addStore(store)
+
+        val config = try {
+            ConfigRetriever
+                .create(vertx, retrieverOptions)
+                .config
+                .await()
+        } catch (e: Exception) {
+            logger.error("config file not found", e)
+            return
+        }
+
+        val smsId = config.getJsonObject("sms").getString("accessKeyId", "")
+        val smsSecret = config.getJsonObject("sms").getString("accessKeySecret", "")
+
+        logger.info("Setting SMS access key id to $smsId and secret to *${smsSecret.takeLast(4)}")
+
+        MessageUtility.accessKeyId = smsId
+        MessageUtility.accessKeySecret = smsSecret
+
+        val db = config.getJsonObject("database")
+
+        val dbOptions = pgConnectOptionsOf(
+            port = db.getInteger("port", 5432),
+            host = db.getString("host", "127.0.0.1"),
+            database = db.getString("database", "postgres"),
+            user = db.getString("user", "postgres"),
+            password = db.getString("password", "postgres")
+        )
+
+        logger.info("Setting database connection to ${dbOptions.toJson()}")
+
+        ConnectionPool.connect(vertx, dbOptions)
+
+        val authAlg = config.getJsonObject("auth")?.getString("algorithm")
+        if (!authAlg.isNullOrEmpty()) {
+            when (authAlg) {
+                "HS" -> {
+                    val key = config.getJsonObject("auth")?.getString("key")
+                    if (!key.isNullOrEmpty())
+                        AuthUtility.key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(key.toByteArray())
+                    else
+                        AuthUtility.key =
+                            io.jsonwebtoken.security.Keys.secretKeyFor(io.jsonwebtoken.SignatureAlgorithm.HS256)
+                }
+
+                else -> {
+                    logger.error("Unknown auth algorithm $authAlg")
+                }
+            }
+        }
+
+        logger.info("Setting auth algorithm to $authAlg")
+
         val server = vertx.createHttpServer()
 
-        val mainRouter =  Router.router(vertx)
+        val mainRouter = Router.router(vertx)
 
         Image.fileSystem = vertx.fileSystem()
-        Image.path = Path("/var/images")
+        Image.path = Path(config.getString("image-path", "/var/images"))
+
+        logger.info("Setting Image path to ${Image.path}")
 
         Chat.coroutineContext = vertx.dispatcher()
 
-        mainRouter.route().order(-30).handler(
-            CorsHandler.create("*")
-                .allowedMethod(HttpMethod.GET)
-                .allowedMethod(HttpMethod.POST)
-                .allowedMethod(HttpMethod.DELETE)
-                .allowedMethod(HttpMethod.PATCH)
-                .allowedMethod(HttpMethod.PUT)
-                .allowedHeader("Cookie")
-                .allowedHeader("X-PINGARUNER")
-                .allowCredentials(true)
-                .allowedHeader("Access-Control-Allow-Headers")
-                .allowedHeader("Authorization")
-                .allowedHeader("Access-Control-Allow-Method")
-                .allowedHeader("Access-Control-Allow-Origin")
-                .allowedHeader("Access-Control-Allow-Credentials")
-                .allowedHeader("Content-Type")
-        )
+        val cors = config.getBoolean("cors", true)
+
+        User.cors = cors
+
+        logger.info("Setting CORS to $cors")
+
+        if (cors)
+            mainRouter.route().order(-30).handler(
+                CorsHandler.create("*")
+                    .allowedMethod(HttpMethod.GET)
+                    .allowedMethod(HttpMethod.POST)
+                    .allowedMethod(HttpMethod.DELETE)
+                    .allowedMethod(HttpMethod.PATCH)
+                    .allowedMethod(HttpMethod.PUT)
+                    .allowedHeader("Cookie")
+                    .allowedHeader("X-PINGARUNER")
+                    .allowCredentials(true)
+                    .allowedHeader("Access-Control-Allow-Headers")
+                    .allowedHeader("Authorization")
+                    .allowedHeader("Access-Control-Allow-Method")
+                    .allowedHeader("Access-Control-Allow-Origin")
+                    .allowedHeader("Access-Control-Allow-Credentials")
+                    .allowedHeader("Content-Type")
+            )
 
         mainRouter.post("/api/hello").order(-1).handler {
             it.response().end("Hello World!")
@@ -52,24 +142,27 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.post("/api/user").order(0).handler(User.addUser)
         mainRouter.post("/api/token").order(1).handler(User.login).produces("application/json")
 
-        mainRouter.route().order(3).handler { ctx->
-            ctx.response().putHeader(HttpHeaders.CONTENT_TYPE,"application/json")
+        mainRouter.route().order(3).handler { ctx ->
+            ctx.response().putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
             val token = ctx.request().getCookie("token")
+
+
+            val loginLogger = LoggerFactory.getLogger(this.javaClass.name + ".login")
+
             if (token == null || token.value == "") {
-                ServerUtility.responseError(ctx, 401, 0, "未登录或登录过期")
+                ServerUtility.responseError(ctx, 401, 0, "未登录或登录过期", loginLogger)
                 return@handler
             }
 
             val subject = try {
                 AuthUtility.verifyToken(token.value)
-            }
-            catch (e: Exception){
-                ServerUtility.responseError(ctx, 400, 0, "token无效")
+            } catch (e: Exception) {
+                ServerUtility.responseError(ctx, 400, 0, "token无效", loginLogger)
                 return@handler
             }
 
-            if (subject == null){
-                ServerUtility.responseError(ctx, 400, 0, "token无效")
+            if (subject == null) {
+                ServerUtility.responseError(ctx, 400, 0, "token无效", loginLogger)
                 return@handler
             }
 
@@ -77,13 +170,13 @@ class MainVerticle : CoroutineVerticle() {
 
             val me = subject.getInteger("userId")
 
-            if(expire == null || me == null){
-                ServerUtility.responseError(ctx, 400, 0, "token无效")
+            if (expire == null || me == null) {
+                ServerUtility.responseError(ctx, 400, 0, "token无效", loginLogger)
                 return@handler
             }
 
-            if (LocalDateTime.now() > LocalDateTime.ofEpochSecond(expire,0, ZoneOffset.ofHours(8))){
-                ServerUtility.responseError(ctx, 400, 0, "token已过期")
+            if (LocalDateTime.now() > LocalDateTime.ofEpochSecond(expire, 0, ZoneOffset.ofHours(8))) {
+                ServerUtility.responseError(ctx, 400, 0, "token已过期", loginLogger)
                 return@handler
             }
 
@@ -136,6 +229,12 @@ class MainVerticle : CoroutineVerticle() {
         server.webSocketHandler(Chat.wsHandler)
 
         server.requestHandler(mainRouter)
-        server.listen(8080,"0.0.0.0")
+
+        val port = config.getInteger("port", 8080)
+        val host = config.getString("host", "127.0.0.1")
+
+        logger.info("Server started listening ${host}:${port}")
+
+        server.listen(port, host)
     }
 }

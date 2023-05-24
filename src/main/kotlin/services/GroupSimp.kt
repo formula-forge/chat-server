@@ -1,12 +1,11 @@
 package services
 
-import dao.*
-import dao.entities.GroupAppEntity
+import dao.ConnectionPool
+import dao.GroupDao
+import dao.GroupMemberDao
+import dao.UserDao
 import dao.entities.GroupEntity
 import dao.entities.GroupMemberEntity
-import io.vertx.core.json.DecodeException
-import io.vertx.core.json.JsonArray
-import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
 import io.vertx.kotlin.core.json.json
 import io.vertx.kotlin.core.json.obj
@@ -15,23 +14,18 @@ import io.vertx.pgclient.PgException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import utilities.AuthUtility
 import utilities.ServerUtility
-import java.time.LocalDate
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
+
 
 object GroupSimp {
-    private const val TYPE_POSTED = "posted"
-
-    private const val TYPE_RECEIVED = "received"
 
     private val groupDao = GroupDao()
     private val userDao = UserDao()
     private val groupMemberDao = GroupMemberDao()
-    private val groupAppDao = GroupAppDao()
 
-    private suspend fun isOwner(groupId: Int, me: Int) : Boolean {
+    private suspend fun isOwner(groupId: Int, me: Int): Boolean {
         val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId)
         return group != null && group.owner == me
     }
@@ -39,6 +33,7 @@ object GroupSimp {
     // 获取群组列表
     @OptIn(DelicateCoroutinesApi::class)
     val listGroup = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "listGroup")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
@@ -46,10 +41,9 @@ object GroupSimp {
                 //获取群组列表
                 val groups = groupMemberDao.getGroups(ConnectionPool.getPool(), me, groupDao)
 
-                ServerUtility.responseSuccess(routingContext, 200, json {
-                    obj(
-                        "size" to groups.size,
-                        "entries" to groups.map { group ->
+                ServerUtility.responseSuccess(
+                    routingContext, 200, json {
+                        obj("size" to groups.size, "entries" to groups.map { group ->
                             json {
                                 obj(
                                     "role" to group.second,
@@ -58,16 +52,16 @@ object GroupSimp {
                                     "avatar" to group.first.avatar
                                 )
                             }
-                        }
-                    )
-                })
+                        })
+                    }, logger
+                )
 
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                logger.warn(e.message, e)
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                logger.warn(e.message, e)
             }
         }
     }
@@ -75,6 +69,7 @@ object GroupSimp {
     // 获取群
     @OptIn(DelicateCoroutinesApi::class)
     val getGroup = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "getGroup")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
@@ -82,38 +77,38 @@ object GroupSimp {
                 // 获取群组id
                 val groupId = routingContext.pathParam("groupId")?.toInt()
 
-                if (ServerUtility.checkNull(routingContext, groupId))
-                    return@launch
+                if (ServerUtility.checkNull(routingContext, groupId, logger = logger)) return@launch
 
                 val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId!!)
 
                 if (group == null) {
-                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在")
+                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在", logger)
                     return@launch
                 }
 
                 val membership = groupMemberDao.getGroupMember(ConnectionPool.getPool(), groupId, me)
 
-                ServerUtility.responseSuccess(routingContext, 200, json {
-                    obj(
-                        "groupId" to group.groupId,
-                        "name" to group.name,
-                        "avatar" to group.avatar,
-                        "owner" to group.owner,
-                        "memberCount" to group.memberCount,
-                        "role" to if (membership == null) "stranger" else membership.role,
-                    )
-                }
+                ServerUtility.responseSuccess(
+                    routingContext, 200, json {
+                        obj(
+                            "groupId" to group.groupId,
+                            "name" to group.name,
+                            "avatar" to group.avatar,
+                            "owner" to group.owner,
+                            "memberCount" to group.memberCount,
+                            "role" to if (membership == null) "stranger" else membership.role,
+                        )
+                    }, logger
                 )
             } catch (e: NumberFormatException) {
-                ServerUtility.responseError(routingContext, 400, 2, "参数格式错误")
+                ServerUtility.responseError(routingContext, 400, 2, "参数格式错误", logger)
                 return@launch
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                logger.warn(e.message, e)
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                logger.warn(e.message, e)
             }
         }
     }
@@ -121,8 +116,9 @@ object GroupSimp {
     // 创建群组
     @OptIn(DelicateCoroutinesApi::class)
     val createGroup = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "createGroup")
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(routingContext.vertx().dispatcher()){
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     // 验证token
                     val me = AuthUtility.getUserId(routingContext)
@@ -132,18 +128,15 @@ object GroupSimp {
 
                     val name = req.getString("name")
 
-                    val description: String? = req.getString("description")
+                    req.getString("description")
                     val avatar: String? = req.getString("avatar")
 
-                    val members: JsonArray? = req.getJsonArray("members")
+                    req.getJsonArray("members")
 
                     // 创建群组
                     val groupId = groupDao.insertElement(
                         ConnectionPool.getPool(), GroupEntity(
-                            name = name,
-                            avatar = avatar,
-                            owner = me,
-                            memberCount = 1
+                            name = name, avatar = avatar, owner = me, memberCount = 1
                         )
                     )
 
@@ -161,10 +154,10 @@ object GroupSimp {
                         obj(
                             "groupId" to groupId,
                         )
-                    })
+                    }, logger)
                 } catch (e: Exception) {
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                    e.printStackTrace()
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -173,16 +166,16 @@ object GroupSimp {
     // 修改群组
     @OptIn(DelicateCoroutinesApi::class)
     val updateGroup = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "updateGroup")
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(routingContext.vertx().dispatcher()){
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
                     val me = AuthUtility.getUserId(routingContext)
 
                     // 获取群组id
                     val groupId = routingContext.pathParam("groupId")?.toInt()
 
-                    if (ServerUtility.checkNull(routingContext, groupId))
-                        return@launch
+                    if (ServerUtility.checkNull(routingContext, groupId, logger = logger)) return@launch
 
                     // 获取请求体
                     val req = buff.toJsonObject()
@@ -191,32 +184,27 @@ object GroupSimp {
                     val avatar: String? = req.getString("avatar")
 
                     // 验证权限
-                    if (!isOwner(groupId!!, me)){
-                        ServerUtility.responseError(routingContext, 403, 2, "权限不足")
+                    if (!isOwner(groupId!!, me)) {
+                        ServerUtility.responseError(routingContext, 403, 2, "权限不足", logger)
                         return@launch
                     }
 
                     // 修改群组
                     groupDao.updateElementByConditions(
-                        ConnectionPool.getPool(),
-                        "id = \$%d",
-                        GroupEntity(
-                            name = name,
-                            avatar = avatar
-                        ),
-                        groupId
+                        ConnectionPool.getPool(), "id = \$%d", GroupEntity(
+                            name = name, avatar = avatar
+                        ), groupId
                     )
 
-                    ServerUtility.responseSuccess(routingContext, 200)
+                    ServerUtility.responseSuccess(routingContext, 200, logger = logger)
                 } catch (e: NullPointerException) {
-                    ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
-                    e.printStackTrace()
+                    ServerUtility.responseError(routingContext, 400, 1, "参数缺失", logger)
                 } catch (e: PgException) {
-                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                    e.printStackTrace()
+                    ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                    logger.warn(e.message, e)
                 } catch (e: Exception) {
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                    e.printStackTrace()
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -225,7 +213,8 @@ object GroupSimp {
     // 删除群组
     @OptIn(DelicateCoroutinesApi::class)
     val deleteGroup = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(routingContext.vertx().dispatcher()){
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "deleteGroup")
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 // 验证token
                 val me = AuthUtility.getUserId(routingContext)
@@ -233,32 +222,31 @@ object GroupSimp {
                 // 获取群组id
                 val groupId = routingContext.pathParam("groupId")?.toInt()
 
-                if (ServerUtility.checkNull(routingContext, groupId))
-                    return@launch
+                if (ServerUtility.checkNull(routingContext, groupId, logger = logger)) return@launch
 
                 val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId!!)
 
-                if (group == null){
-                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在")
+                if (group == null) {
+                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在", logger)
                     return@launch
                 }
                 if (group.owner != me) {
-                    ServerUtility.responseError(routingContext, 403, 2, "权限不足")
+                    ServerUtility.responseError(routingContext, 403, 2, "权限不足", logger)
                     return@launch
                 }
 
                 // 删除群组
                 groupDao.deleteElementByKey(ConnectionPool.getPool(), groupId)
 
-                ServerUtility.responseSuccess(routingContext, 200)
+                ServerUtility.responseSuccess(routingContext, 200, logger = logger)
             } catch (e: NullPointerException) {
-                ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
+                ServerUtility.responseError(routingContext, 400, 1, "参数缺失", logger)
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                logger.warn(e.message, e)
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                logger.warn(e.message, e)
             }
         }
     }
@@ -266,9 +254,10 @@ object GroupSimp {
     // 获取成员列表
     @OptIn(DelicateCoroutinesApi::class)
     val getGroupMembers = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(routingContext.vertx().dispatcher()){
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "getGroupMembers")
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
-                val me = AuthUtility.getUserId(routingContext)
+                AuthUtility.getUserId(routingContext)
                 // 获取群组id
                 val groupId = routingContext.pathParam("groupId")!!.toInt()
 
@@ -294,17 +283,17 @@ object GroupSimp {
                     obj(
                         "members" to membersComposed
                     )
-                })
+                }, logger)
             } catch (e: NullPointerException) {
-                ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
+                ServerUtility.responseError(routingContext, 400, 1, "参数缺失", logger)
                 return@launch
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                logger.warn(e.message, e)
                 return@launch
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                logger.warn(e.message, e)
                 return@launch
             }
         }
@@ -313,51 +302,57 @@ object GroupSimp {
     // 添加成员
     @OptIn(DelicateCoroutinesApi::class)
     val addGroupMember = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "addGroupMember")
         routingContext.request().bodyHandler { buff ->
-            GlobalScope.launch(routingContext.vertx().dispatcher()){
+            GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
-                    val me = AuthUtility.getUserId(routingContext)
+                    AuthUtility.getUserId(routingContext)
 
                     // 获取群组id
                     val groupId = routingContext.pathParam("groupId")?.toInt()
 
-                    if (ServerUtility.checkNull(routingContext, groupId))
-                        return@launch
+                    if (ServerUtility.checkNull(routingContext, groupId, logger = logger)) return@launch
 
                     // 获取请求体
                     val req = buff.toJsonObject()
                     val userId: Int? = req.getInteger("userId")
 
-                    if (ServerUtility.checkNull(routingContext, userId))
-                        return@launch
+                    if (ServerUtility.checkNull(routingContext, userId, logger = logger)) return@launch
 
                     // 添加成员
                     groupMemberDao.addGroupMembers(
-                        ConnectionPool.getPool(),
-                        groupId!!,
-                        listOf(
+                        ConnectionPool.getPool(), groupId!!, listOf(
                             GroupMemberEntity(
-                                userId = userId,
-                                role = "member"
+                                userId = userId, role = "member"
                             )
                         )
                     )
 
-                    ServerUtility.responseSuccess(routingContext, 201)
+                    ServerUtility.responseSuccess(routingContext, 201, logger = logger)
                 } catch (e: ClassCastException) {
-                    ServerUtility.responseError(routingContext, 400, 1, "参数类型错误")
+                    ServerUtility.responseError(routingContext, 400, 1, "参数类型错误", logger)
                 } catch (e: PgException) {
-                    if (e.message != null && e.message!!.contains("foreign key constraint"))
-                        ServerUtility.responseError(routingContext, 404, 2, "用户不存在")
-                    else if (e.message != null && e.message!!.contains("duplicate key"))
-                        ServerUtility.responseError(routingContext, 409, 3, "成员已存在")
+                    if (e.message != null && e.message!!.contains("foreign key constraint")) ServerUtility.responseError(
+                        routingContext,
+                        404,
+                        2,
+                        "用户不存在",
+                        logger
+                    )
+                    else if (e.message != null && e.message!!.contains("duplicate key")) ServerUtility.responseError(
+                        routingContext,
+                        409,
+                        3,
+                        "成员已存在",
+                        logger
+                    )
                     else {
-                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                        e.printStackTrace()
+                        ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                        logger.warn(e.message, e)
                     }
                 } catch (e: Exception) {
-                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                    e.printStackTrace()
+                    ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -366,43 +361,43 @@ object GroupSimp {
     // 删除成员
     @OptIn(DelicateCoroutinesApi::class)
     val delGroupMember = fun(routingContext: RoutingContext) {
-        GlobalScope.launch(routingContext.vertx().dispatcher()){
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "delGroupMember")
+        GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val me = AuthUtility.getUserId(routingContext)
-                
+
                 // 获取群组id
                 val groupId = routingContext.pathParam("groupId")?.toInt()
                 // 获取用户id
                 val userId = routingContext.pathParam("userId")?.toInt()
 
-                if (ServerUtility.checkNull(routingContext, groupId, userId))
-                    return@launch
+                if (ServerUtility.checkNull(routingContext, groupId, userId, logger = logger)) return@launch
 
                 val group = groupDao.getElementByKey(ConnectionPool.getPool(), groupId!!)
 
-                if (group == null){
-                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在")
+                if (group == null) {
+                    ServerUtility.responseError(routingContext, 404, 4, "群组不存在", logger)
                     return@launch
                 }
                 if (userId != me && group.owner != me || group.owner == userId) {
-                    ServerUtility.responseError(routingContext, 403, 2, "权限不足")
+                    ServerUtility.responseError(routingContext, 403, 2, "权限不足", logger)
                     return@launch
                 }
 
                 // 删除成员
-                groupMemberDao.removeGroupMember(ConnectionPool.getPool(), groupId!!, userId!!)
+                groupMemberDao.removeGroupMember(ConnectionPool.getPool(), groupId, userId!!)
 
-                ServerUtility.responseSuccess(routingContext, 200)
+                ServerUtility.responseSuccess(routingContext, 200, logger = logger)
             } catch (e: NullPointerException) {
-                ServerUtility.responseError(routingContext, 400, 1, "参数缺失")
+                ServerUtility.responseError(routingContext, 400, 1, "参数缺失", logger)
             } catch (e: ClassCastException) {
-                ServerUtility.responseError(routingContext, 400, 1, "参数类型错误")
+                ServerUtility.responseError(routingContext, 400, 1, "参数类型错误", logger)
             } catch (e: PgException) {
-                ServerUtility.responseError(routingContext, 500, 30, "数据库错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "数据库错误", logger)
+                logger.warn(e.message, e)
             } catch (e: Exception) {
-                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误")
-                e.printStackTrace()
+                ServerUtility.responseError(routingContext, 500, 30, "服务器内部错误", logger)
+                logger.warn(e.message, e)
             }
         }
     }

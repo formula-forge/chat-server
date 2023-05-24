@@ -8,6 +8,7 @@ import dao.entities.UserEntity
 import io.vertx.core.http.Cookie
 import io.vertx.core.http.CookieSameSite
 import io.vertx.core.http.HttpHeaders
+import org.slf4j.LoggerFactory
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
@@ -22,20 +23,25 @@ import org.mindrot.jbcrypt.BCrypt
 import utilities.AuthUtility
 import utilities.CheckUtility
 import utilities.MessageUtility
+import utilities.ServerUtility
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
 import java.text.ParseException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
+
 // 用户服务类
 object User {
     private val userDao = UserDao()
     private val friendDao = FriendDao()
 
+    var cors = true
+
     //新增用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val addUser = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".addUser")
         routingContext.response().putHeader(HttpHeaders.CONTENT_TYPE, "application/json")
         routingContext.request().handler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
@@ -52,25 +58,25 @@ object User {
 
                     //验证参数
                     if (!CheckUtility.checkNotNull(verifyCode, phone, name, password)) {
-                        responseError(routingContext, 400, 10, "参数不完整")
+                        responseError(routingContext, 400, 10, "参数不完整", logger)
                         return@launch
                     }
-                    if (!MessageUtility.verifyCode(phone!!,verifyCode!!)) {
-                        responseError(routingContext, 400, 12, "验证码过期或错误")
+                    if (!MessageUtility.verifyCode(phone!!, verifyCode!!)) {
+                        responseError(routingContext, 400, 12, "验证码过期或错误", logger)
                         return@launch
                     }
                     if (!CheckUtility.checkSpecialChars(name!!)) {
-                        responseError(routingContext, 400, 1, "用户名不合法")
+                        responseError(routingContext, 400, 1, "用户名不合法", logger)
                         return@launch
                     }
                     if (!CheckUtility.checkPassword(password!!)) {
-                        responseError(routingContext, 400, 2, "密码不合法")
+                        responseError(routingContext, 400, 2, "密码不合法", logger)
                         return@launch
                     } else if (detail != null) {
                         try {
                             JsonObject(detail)
                         } catch (e: DecodeException) {
-                            responseError(routingContext, 400, 1, "用户详情不合法")
+                            responseError(routingContext, 400, 1, "用户详情不合法", logger)
                             return@launch
                         }
                     }
@@ -89,45 +95,46 @@ object User {
                         userDao.insertElement(ConnectionPool.getPool(routingContext.vertx()), user)
                     } catch (e: Exception) {
                         //如果用户名已存在
-                        if (e.message != null &&
-                            e.message!!.contains("duplicate key")
-                        ) {
-                            responseError(routingContext, 400, 13, "用户名已存在")
+                        if (e.message != null && e.message!!.contains("duplicate key")) {
+                            responseError(routingContext, 400, 13, "用户名已存在", logger)
                             return@launch
                         }
                         //其他错误
-                        responseError(routingContext, 500, 30, "数据库错误")
+                        responseError(routingContext, 500, 30, "数据库错误", logger)
+                        logger.warn(e.message, e)
                         return@launch
                     }
 
                     //获取新增的用户
-                    val created = userDao
-                        .getElementsByConditions(ConnectionPool.getPool(routingContext.vertx()), "username = \$1", name)
+                    val created = userDao.getElementsByConditions(
+                            ConnectionPool.getPool(routingContext.vertx()),
+                            "username = \$1",
+                            name
+                        )
 
                     //如果用户创建失败
                     if (created.isNullOrEmpty()) {
-                        responseError(routingContext, 500, 30, "用户创建失败")
+                        responseError(routingContext, 500, 30, "用户创建失败", logger)
                         return@launch
                     }
 
                     //返回成功和用户id
                     responseSuccess(
-                        routingContext,
-                        201,
-                        json {
+                        routingContext, 201, json {
                             obj(
                                 "userId" to created.keys.first(),
                             )
-                        }
+                        }, logger
                     )
-                } catch (e : NullPointerException){
-                    responseError(routingContext, 400, 1, "参数不完整")
+                } catch (e: NullPointerException) {
+                    responseError(routingContext, 400, 1, "参数不完整", logger)
                 } catch (e: ClassCastException) {
-                    responseError(routingContext, 400, 1, "参数不合法")
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
                 } catch (e: DecodeException) {
-                    responseError(routingContext, 400, 1, "请求不符合格式")
+                    responseError(routingContext, 400, 1, "请求不符合格式", logger)
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误" + e.message)
+                    responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -137,6 +144,7 @@ object User {
     //获取用户信息 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val getUser = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".getUser")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 // 从请求中获取用户id
@@ -144,15 +152,12 @@ object User {
 
                 var userId: Int? = null
 
-                if (rawId != null)
-                    userId = try {
-                        rawId.toInt()
-                    } catch (e: NumberFormatException) {
-                        responseError(routingContext, 400, 1, "参数不合法")
-                        return@launch
-                    }
-
-                println("Getting user $userId")
+                if (rawId != null) userId = try {
+                    rawId.toInt()
+                } catch (e: NumberFormatException) {
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
+                    return@launch
+                }
 
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
@@ -175,7 +180,7 @@ object User {
                 val user = userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), userId)
 
                 if (user == null) {
-                    responseError(routingContext, 404, 4, "用户不存在")
+                    responseError(routingContext, 404, 4, "用户不存在", logger)
                     return@launch
                 }
 
@@ -199,11 +204,11 @@ object User {
                     friend = try {
                         friendDao.checkFriendShip(ConnectionPool.getPool(routingContext.vertx()), me, userId)
                     } catch (e: Exception) {
-                        responseError(routingContext, 500, 30, "数据库错误")
+                        responseError(routingContext, 500, 30, "数据库错误", logger)
+                        logger.warn(e.message, e)
                         return@launch
                     }
-                    if(friend)
-                        data.put("type", "friend")
+                    if (friend) data.put("type", "friend")
                 }
 
                 //如果是好友
@@ -215,14 +220,17 @@ object User {
                     data.put("type", "stranger")
                 }
 
-                //返回成功
-                routingContext.response().end(
-                    json { obj("status" to 200, "data" to data, "message" to "OK") }.encode()
+                ServerUtility.responseSuccess(
+                    routingContext,
+                    200,
+                    json { obj("status" to 200, "data" to data, "message" to "OK") },
+                    logger
                 )
             } catch (e: ClassCastException) {
-                responseError(routingContext, 400, 1, "参数不合法")
+                responseError(routingContext, 400, 1, "参数不合法", logger)
             } catch (e: Exception) {
-                responseError(routingContext, 500, 30, "服务器错误" + e.printStackTrace())
+                responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                logger.warn(e.message, e)
             }
         }
     }
@@ -230,6 +238,7 @@ object User {
     //修改用户信息 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val updUser = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".updUser")
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
@@ -237,19 +246,17 @@ object User {
                     var userId: Int? = try {
                         routingContext.pathParam("id")?.toInt()
                     } catch (e: NumberFormatException) {
-                        responseError(routingContext, 400, 1, "参数不合法")
+                        responseError(routingContext, 400, 1, "参数不合法", logger)
                         return@launch
                     }
-                    println("Updating user $userId")
 
                     //验证token
                     val me = AuthUtility.getUserId(routingContext)
 
-                    if (userId == null)
-                        userId = me
+                    if (userId == null) userId = me
 
                     if (userId != me) {
-                        responseError(routingContext, 403, 2, "权限不足")
+                        responseError(routingContext, 403, 2, "权限不足", logger)
                         return@launch
                     }
 
@@ -260,7 +267,7 @@ object User {
                         val req = try {
                             buff.toJsonObject().map
                         } catch (e: DecodeException) {
-                            responseError(routingContext, 400, 1, "请求不符合格式")
+                            responseError(routingContext, 400, 1, "请求不符合格式", logger)
                             return@launch
                         }
 
@@ -271,10 +278,9 @@ object User {
                         val protected = req["protected"] as Boolean?
 
                         if (name != null) {
-                            if (CheckUtility.checkSpecialChars(name))
-                                user.userName = name
+                            if (CheckUtility.checkSpecialChars(name)) user.userName = name
                             else {
-                                responseError(routingContext, 400, 1, "用户名不合法")
+                                responseError(routingContext, 400, 1, "用户名不合法", logger)
                                 return@launch
                             }
                         }
@@ -283,7 +289,7 @@ object User {
                             user.userDetail = try {
                                 JsonObject.mapFrom(detail)
                             } catch (e: Exception) {
-                                responseError(routingContext, 400, 1, "用户详情不合法")
+                                responseError(routingContext, 400, 1, "用户详情不合法", logger)
                                 return@launch
                             }
                         }
@@ -293,33 +299,38 @@ object User {
                         user.protected = protected
 
                         try {
-                            userDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id=\$%d", user, userId)
+                            userDao.updateElementByConditions(
+                                ConnectionPool.getPool(routingContext.vertx()), "id=\$%d", user, userId
+                            )
                         } catch (e: UnsupportedOperationException) {
-                            responseError(routingContext, 400, 6, "无事可做")
+                            responseError(routingContext, 400, 6, "无事可做", logger)
                             return@launch
                         } catch (e: Exception) {
-                            if (e.message != null
-                                && e.message!!.contains("duplicate key")
+                            if (e.message != null && e.message!!.contains("duplicate key")) responseError(
+                                routingContext,
+                                400,
+                                5,
+                                "用户名已存在",
+                                logger
                             )
-                                responseError(routingContext, 400, 5, "用户名已存在")
-                            else
-                                responseError(routingContext, 500, 30, "数据库错误" + e.message)
+                            else responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                            logger.warn(e.message, e)
                             return@launch
                         }
 
                         //返回成功
-                        routingContext.response().end(
-                            json { obj("status" to 200, "message" to "OK") }.encode()
-                        )
+                        responseSuccess(routingContext, 200, logger = logger)
                     } catch (e: ClassCastException) {
-                        responseError(routingContext, 400, 1, "参数不合法")
+                        responseError(routingContext, 400, 1, "参数不合法", logger)
                     } catch (e: Exception) {
-                        responseError(routingContext, 500, 30, "服务器错误" + e.message)
+                        responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                        logger.warn(e.message, e)
                     }
                 } catch (e: ClassCastException) {
-                    responseError(routingContext, 400, 1, "参数不合法")
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误" + e.message)
+                    responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -328,28 +339,26 @@ object User {
     //删除用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val delUser = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".delUser")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 // 从请求中获取用户id
                 var userId: Int? = try {
                     routingContext.pathParam("id")?.toInt()
                 } catch (e: NumberFormatException) {
-                    responseError(routingContext, 400, 1, "参数不合法")
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
                     return@launch
                 }
-
-                println("Deleting user $userId")
 
                 //验证token
                 val token = routingContext.request().getCookie("token")!!
                 val subject = AuthUtility.verifyToken(token.value)!!
                 val me = subject.getInteger("userId")!!
 
-                if(userId == null)
-                    userId = me
+                if (userId == null) userId = me
 
                 if (userId != me) {
-                    responseError(routingContext, 403, 2, "权限不足")
+                    responseError(routingContext, 403, 2, "权限不足", logger)
                     return@launch
                 }
 
@@ -357,7 +366,8 @@ object User {
                 try {
                     userDao.deleteElementByKey(ConnectionPool.getPool(routingContext.vertx()), userId)
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "数据库错误")
+                    responseError(routingContext, 500, 30, "数据库错误", logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 
@@ -368,9 +378,10 @@ object User {
                 )
 
             } catch (e: ClassCastException) {
-                responseError(routingContext, 400, 1, "参数不合法")
+                responseError(routingContext, 400, 1, "参数不合法", logger)
             } catch (e: Exception) {
-                responseError(routingContext, 500, 30, "服务器错误" + e.printStackTrace())
+                responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                logger.warn(e.message, e)
             }
         }
     }
@@ -378,6 +389,7 @@ object User {
     //获取收藏公式
     @OptIn(DelicateCoroutinesApi::class)
     val getFavFormula = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".getFavFormula")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             // 验证token
             val token = routingContext.request().getCookie("token")!!
@@ -388,17 +400,17 @@ object User {
             try {
                 val user = userDao.getElementByKey(ConnectionPool.getPool(routingContext.vertx()), me)
                 val fav = user!!.favFormula
-                responseSuccess(routingContext, 200, json { obj("formula" to fav) })
+                responseSuccess(routingContext, 200, json { obj("formula" to fav) }, logger = logger)
             } catch (e: NullPointerException) {
-                responseError(routingContext, 404, 4, "用户不存在")
+                responseError(routingContext, 404, 4, "用户不存在", logger)
                 return@launch
             } catch (e: PgException) {
-                responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                e.printStackTrace()
+                responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                logger.warn(e.message, e)
                 return@launch
             } catch (e: Exception) {
-                responseError(routingContext, 500, 30, "服务器错误")
-                e.printStackTrace()
+                responseError(routingContext, 500, 30, "服务器错误", logger)
+                logger.warn(e.message, e)
                 return@launch
             }
 
@@ -408,6 +420,7 @@ object User {
     //更新收藏公式
     @OptIn(DelicateCoroutinesApi::class)
     val updateFavFormula = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".updateFavFormula")
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 // 验证token
@@ -423,17 +436,17 @@ object User {
                         UserEntity(favFormula = buff.toJsonObject()),
                         me
                     )
-                    responseSuccess(routingContext, 200)
+                    responseSuccess(routingContext, 200, logger = logger)
                 } catch (e: NullPointerException) {
-                    responseError(routingContext, 404, 4, "用户不存在")
+                    responseError(routingContext, 404, 4, "用户不存在", logger)
                     return@launch
                 } catch (e: PgException) {
-                    responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                    e.printStackTrace()
+                    responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误")
-                    e.printStackTrace()
+                    responseError(routingContext, 500, 30, "服务器错误", logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 
@@ -444,6 +457,7 @@ object User {
     //登录 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val login = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".login")
         routingContext.response().putHeader("content-type", "application/json")
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
@@ -453,16 +467,15 @@ object User {
                     val userName = req["username"] as String?
                     val phone = req["phone"] as String?
                     val password = req["password"] as String?
-                    val code : Int? = (req["code"] as String?)?.toIntOrNull()
+                    val code: Int? = (req["code"] as String?)?.toIntOrNull()
 
-                    if ((userName == null && phone == null) || (password == null && code == null) || (phone == null && code != null))  {
-                        responseError(routingContext, 400, 10, "参数不完整")
+                    if ((userName == null && phone == null) || (password == null && code == null) || (phone == null && code != null)) {
+                        responseError(routingContext, 400, 10, "参数不完整", logger)
                         return@launch
                     }
 
                     try {
-                        val userRow = userDao
-                            .getElementsByConditions(
+                        val userRow = userDao.getElementsByConditions(
                                 ConnectionPool.getPool(routingContext.vertx()),
                                 "username = \$1 or phone = \$2",
                                 userName ?: "",
@@ -470,50 +483,52 @@ object User {
                             )
 
                         if (userRow == null) {
-                            responseError(routingContext, 400, 20, "用户不存在")
+                            responseError(routingContext, 400, 20, "用户不存在", logger)
                             return@launch
                         }
 
                         val user = userRow.values.first()
 
-                        if ((password != null && BCrypt.checkpw(password, user.passWord) || (code != null && phone != null && MessageUtility.verifyCode(phone, code)))) {
-                            val token = AuthUtility.generateToken(
-                                json {
-                                    obj(
-                                        "userId" to user.userId,
-                                        "expire" to LocalDateTime.now().plusMonths(1)
-                                            .toEpochSecond(ZoneOffset.ofHours(8))
-                                    )
-                                }
-                            )
+                        if ((password != null && BCrypt.checkpw(
+                                password, user.passWord
+                            ) || (code != null && phone != null && MessageUtility.verifyCode(phone, code)))
+                        ) {
+                            val token = AuthUtility.generateToken(json {
+                                obj(
+                                    "userId" to user.userId,
+                                    "expire" to LocalDateTime.now().plusMonths(1).toEpochSecond(ZoneOffset.ofHours(8))
+                                )
+                            })
                             routingContext.response().addCookie(
-                                Cookie.cookie("token", token).setHttpOnly(false).setPath("/")
-                                    .setMaxAge(60 * 60 * 24 * 30).setSameSite(CookieSameSite.NONE).setSecure(true)
+                                if (cors)
+                                    Cookie.cookie("token", token).setHttpOnly(false).setPath("/")
+                                        .setMaxAge(60 * 60 * 24 * 30).setSameSite(CookieSameSite.NONE).setSecure(true)
+                                else
+                                    Cookie.cookie("token", token).setHttpOnly(false).setPath("/")
+                                        .setMaxAge(60 * 60 * 24 * 30).setSecure(false)
                             )
 
                             responseSuccess(
-                                routingContext,
-                                201,
-                                json {
+                                routingContext, 201, json {
                                     obj(
-                                        "userId" to user.userId,
-                                        "token" to token
+                                        "userId" to user.userId, "token" to token
                                     )
-                                }
+                                }, logger = logger
                             )
-                        }
-                        else {
-                            responseError(routingContext, 400, 14, "密码错误")
+                        } else {
+                            responseError(routingContext, 400, 14, "密码错误", logger)
                         }
                     } catch (e: PgException) {
-                        responseError(routingContext, 500, 30, "数据库错误")
+                        responseError(routingContext, 500, 30, "数据库错误", logger)
+                        logger.warn(e.message, e)
                     }
                 } catch (e: DecodeException) {
-                    responseError(routingContext, 400, 1, "请求不符合格式")
+                    responseError(routingContext, 400, 1, "请求不符合格式", logger)
                 } catch (e: ClassCastException) {
-                    responseError(routingContext, 400, 1, "参数不合法")
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误" + e.message)
+                    responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                    logger.warn(e.message, e)
                 }
             }
         }
@@ -521,50 +536,56 @@ object User {
 
     //登出 Handler
     val logout = fun(routingContext: RoutingContext) {
-        routingContext.response().removeCookie("token").setPath("/").setSameSite(CookieSameSite.NONE).setSecure(true)
-        routingContext.response().end(
-            json { obj("status" to 200, "message" to "OK") }.encode()
-        )
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".logout")
+        if (cors)
+            routingContext.response().removeCookie("token").setPath("/").setSameSite(CookieSameSite.NONE).setSecure(true)
+        else
+            routingContext.response().removeCookie("token").setPath("/").setSecure(false)
+        responseSuccess(routingContext, 200, logger = logger)
     }
 
     //发送验证码 Handler
     @OptIn(DelicateCoroutinesApi::class)
     val getSMS = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".getSMS")
         routingContext.response().putHeader("content-type", "application/json")
         GlobalScope.launch(routingContext.vertx().dispatcher()) {
             try {
                 val phone = routingContext.request().getParam("phone")
 
                 if (phone == null) {
-                    responseError(routingContext, 400, 10, "参数不完整")
+                    responseError(routingContext, 400, 10, "参数不完整", logger)
                     return@launch
                 }
 
                 try {
-                    MessageUtility.sendCode(phone)
+                    MessageUtility.sendCode(phone,logger)
                 } catch (e: IllegalArgumentException) {
-                    responseError(routingContext, 400, 1, "手机号不合法")
+                    responseError(routingContext, 400, 1, "手机号不合法", logger)
                     return@launch
-                } catch (e : TooManyRequestException) {
-                    responseError(routingContext, 429, 1, "请求过于频繁，请${e.tryAfter}秒后重试")
+                } catch (e: TooManyRequestException) {
+                    responseError(routingContext, 429, 1, "请求过于频繁，请${e.tryAfter}秒后重试", logger)
                     return@launch
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误")
+                    responseError(routingContext, 500, 30, "服务器错误", logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 
-                responseSuccess(routingContext, 200)
+                responseSuccess(routingContext, 200, logger = logger)
             } catch (e: ClassCastException) {
-                responseError(routingContext, 400, 1, "参数不合法")
+                responseError(routingContext, 400, 1, "参数不合法", logger)
             } catch (e: Exception) {
-                responseError(routingContext, 500, 30, "服务器错误" + e.message)
+                responseError(routingContext, 500, 30, "服务器错误" + e.message, logger)
+                logger.warn(e.message, e)
             }
         }
     }
 
     //更新密码 Handler
     @OptIn(DelicateCoroutinesApi::class)
-    val updPassword = fun(routingContext : RoutingContext) {
+    val updPassword = fun(routingContext: RoutingContext) {
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".updPassword")
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
@@ -577,30 +598,36 @@ object User {
                     val phone = req.getString("phone")!!
                     val code = req.getInteger("code")!!
 
-                    val password : String = req.getString("password")!!
+                    val password: String = req.getString("password")!!
 
                     //验证验证码
                     if (!MessageUtility.verifyCode(phone, code)) {
-                        responseError(routingContext, 400, 1, "验证码错误")
+                        responseError(routingContext, 400, 1, "验证码错误", logger)
                         return@launch
                     }
 
                     //更新密码
-                    userDao.updateElementByConditions(ConnectionPool.getPool(routingContext.vertx()), "id = \$%d AND phone = \$%d", UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())), id, phone)
+                    userDao.updateElementByConditions(
+                        ConnectionPool.getPool(routingContext.vertx()),
+                        "id = \$%d AND phone = \$%d",
+                        UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())),
+                        id,
+                        phone
+                    )
 
-                    responseSuccess(routingContext, 200)
+                    responseSuccess(routingContext, 200, logger = logger)
                 } catch (e: NullPointerException) {
-                    responseError(routingContext, 400, 1, "参数不完整")
+                    responseError(routingContext, 400, 1, "参数不完整", logger)
                     return@launch
-                } catch (e : ParseException) {
-                    responseError(routingContext, 400, 1, "参数不合法")
+                } catch (e: ParseException) {
+                    responseError(routingContext, 400, 1, "参数不合法", logger)
                 } catch (e: PgException) {
-                    responseError(routingContext, 500, 30, "数据库错误" + e.message)
-                    e.printStackTrace()
+                    responseError(routingContext, 500, 30, "数据库错误" + e.message, logger)
+                    logger.warn(e.message, e)
                     return@launch
                 } catch (e: Exception) {
-                    responseError(routingContext, 500, 30, "服务器错误")
-                    e.printStackTrace()
+                    responseError(routingContext, 500, 30, "服务器错误", logger)
+                    logger.warn(e.message, e)
                     return@launch
                 }
 

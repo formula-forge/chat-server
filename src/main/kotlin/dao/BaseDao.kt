@@ -6,8 +6,6 @@ import io.vertx.sqlclient.Row
 import io.vertx.sqlclient.RowSet
 import io.vertx.sqlclient.Tuple
 import io.vertx.sqlclient.impl.ArrayTuple
-import java.awt.RenderingHints.Key
-import javax.swing.tree.RowMapper
 import kotlin.reflect.KProperty1
 
 
@@ -146,9 +144,6 @@ abstract class BaseDao <T : Any, TKey : Any> {
 
         valPrepared.addAll(condPrepared.toList())
         val range : Array<Int> = IntRange(cnt,cnt + condPrepared.size).toList().toTypedArray()
-        println("UPDATE %s SET %s WHERE %s"
-            .format(tableName,updClause.substring(0,updClause.length-1),
-                condClause.format(*range)))
 
         connection
             .preparedQuery("UPDATE %s SET %s WHERE %s"
