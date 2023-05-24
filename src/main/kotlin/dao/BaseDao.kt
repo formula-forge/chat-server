@@ -126,7 +126,7 @@ abstract class BaseDao <T : Any, TKey : Any> {
             .await()
     }
 
-    suspend fun updateElementByConditions(connection: PgPool, condClause: String,  entity: T, vararg condPrepared : Any){
+    suspend fun updateElementByConditions(connection: PgPool, condClause: String,  entity: T, vararg condPrepared : Any) : Int{
         val updClause : StringBuilder = StringBuilder()
 
         var cnt = 1
@@ -145,11 +145,12 @@ abstract class BaseDao <T : Any, TKey : Any> {
         valPrepared.addAll(condPrepared.toList())
         val range : Array<Int> = IntRange(cnt,cnt + condPrepared.size).toList().toTypedArray()
 
-        connection
+        val rows = connection
             .preparedQuery("UPDATE %s SET %s WHERE %s"
                 .format(tableName,updClause.substring(0,updClause.length-1),
-                    condClause.format(*range)))
+                    condClause.format(*range)) + (" RETURNING %s".format(keyName)))
             .execute(Tuple.from(valPrepared))
             .await()
+        return rows.count()
     }
 }

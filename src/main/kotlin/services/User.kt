@@ -8,7 +8,6 @@ import dao.entities.UserEntity
 import io.vertx.core.http.Cookie
 import io.vertx.core.http.CookieSameSite
 import io.vertx.core.http.HttpHeaders
-import org.slf4j.LoggerFactory
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.RoutingContext
@@ -20,6 +19,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.mindrot.jbcrypt.BCrypt
+import org.slf4j.LoggerFactory
 import utilities.AuthUtility
 import utilities.CheckUtility
 import utilities.MessageUtility
@@ -607,13 +607,18 @@ object User {
                     }
 
                     //更新密码
-                    userDao.updateElementByConditions(
+                    val count = userDao.updateElementByConditions(
                         ConnectionPool.getPool(routingContext.vertx()),
                         "id = \$%d AND phone = \$%d",
                         UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())),
                         id,
                         phone
                     )
+
+                    if (count == 0){
+                        responseError(routingContext, 400, 9, "没有更新任何内容", logger)
+                        return@launch
+                    }
 
                     responseSuccess(routingContext, 200, logger = logger)
                 } catch (e: NullPointerException) {

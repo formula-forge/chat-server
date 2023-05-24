@@ -30,26 +30,40 @@ class MainVerticle : CoroutineVerticle() {
         val ch = java.util.logging.ConsoleHandler()
         java.util.logging.Logger.getLogger("")
             .addHandler(fh)
-        java.util.logging.Logger.getLogger("")
-            .addHandler(ch)
+//        java.util.logging.Logger.getLogger("")
+//            .addHandler(ch)
 
         val logger = LoggerFactory.getLogger(this::class.java)
-        val store = configStoreOptionsOf(
+        val storeGlobal = configStoreOptionsOf(
             type = "file",
             format = "yaml",
             config = json {
                 obj(
                     "path" to "/etc/chat-server/config.yaml"
                 )
-            }
+            },
+            optional = true
+        )
+
+        val storeLocal = configStoreOptionsOf(
+            type = "file",
+            format = "yaml",
+            config = json {
+                obj(
+                    "path" to "config.yaml"
+                )
+            },
+            optional = true
         )
 
         val retrieverOptions = ConfigRetrieverOptions()
-            .addStore(store)
+            .addStore(storeGlobal)
+            .addStore(storeLocal)
 
         val config = try {
-            ConfigRetriever
+            val configRetriever = ConfigRetriever
                 .create(vertx, retrieverOptions)
+            configRetriever
                 .config
                 .await()
         } catch (e: Exception) {
@@ -188,7 +202,7 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.delete("/api/user/:id").order(6).handler(User.delUser)
         mainRouter.delete("/api/user").order(6).handler(User.delUser)
         mainRouter.patch("/api/user/:id").order(7).handler(User.updUser)
-        mainRouter.patch("/api/user").order(30).handler(User.updUser)
+        mainRouter.patch("/api/user/:id/private").order(30).handler(User.updPassword)
 
         mainRouter.delete("/api/token").order(8).handler(User.logout)
 
