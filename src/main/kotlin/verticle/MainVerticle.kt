@@ -5,6 +5,7 @@ import io.vertx.config.ConfigRetriever
 import io.vertx.config.ConfigRetrieverOptions
 import io.vertx.core.http.HttpHeaders
 import io.vertx.core.http.HttpMethod
+import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.Router
 import io.vertx.ext.web.handler.CorsHandler
 import io.vertx.kotlin.config.configStoreOptionsOf
@@ -17,6 +18,7 @@ import io.vertx.kotlin.pgclient.pgConnectOptionsOf
 import org.slf4j.LoggerFactory
 import services.*
 import utilities.AuthUtility
+import utilities.JaxUtility
 import utilities.MessageUtility
 import utilities.ServerUtility
 import java.time.LocalDateTime
@@ -113,6 +115,15 @@ class MainVerticle : CoroutineVerticle() {
 
         logger.info("Setting auth algorithm to $authAlg")
 
+        val jax = config.getJsonObject("jax", JsonObject())
+
+        if (jax.getBoolean("enable", false)){
+            val jaxPort = jax.getInteger("port", 2023)
+            val jaxHost = jax.getString("host", "127.0.0.1")
+            logger.info("Setting JAX to $jaxHost:$jaxPort")
+            User.jax = JaxUtility(vertx, jaxPort, jaxHost)
+        }
+
         val server = vertx.createHttpServer()
 
         val mainRouter = Router.router(vertx)
@@ -202,7 +213,7 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.delete("/api/user/:id").order(6).handler(User.delUser)
         mainRouter.delete("/api/user").order(6).handler(User.delUser)
         mainRouter.patch("/api/user/:id").order(7).handler(User.updUser)
-        mainRouter.patch("/api/user/:id/private").order(30).handler(User.updPassword)
+        mainRouter.patch("/api/user/password").order(-15).handler(User.updPassword)
 
         mainRouter.delete("/api/token").order(8).handler(User.logout)
 
@@ -239,6 +250,17 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/img/:file").order(-6).handler(Image.download)
         mainRouter.get("/img/avatar/:type/:id").order(-4).handler(Image.avatar)
 
+        mainRouter.get("/api/connect").order(-20).handler{ ctx->
+            if (ctx.request().getHeader("Upgrade") != "websocket")
+                ctx.response().setStatusCode(400).end("Not a websocket request")
+            else{
+                ctx.request().pause()
+                ctx.request().toWebSocket().onSuccess(Chat.wsHandler).onFailure{
+                    ctx.request().resume()
+                }
+            }
+        }
+
         Chat.vertx = vertx
         server.webSocketHandler(Chat.wsHandler)
 
@@ -248,6 +270,10 @@ class MainVerticle : CoroutineVerticle() {
         val host = config.getString("host", "127.0.0.1")
 
         logger.info("Server started listening ${host}:${port}")
+
+        val pingTimer = vertx.setPeriodic(10000){
+            Chat.ping()
+        }
 
         server.listen(port, host)
     }

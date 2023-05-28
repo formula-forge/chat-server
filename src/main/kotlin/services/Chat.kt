@@ -5,7 +5,9 @@ import dao.*
 import dao.entities.MessageEntity
 import dao.entities.SessionEntity
 import io.vertx.core.Vertx
+import io.vertx.core.buffer.Buffer
 import io.vertx.core.http.ServerWebSocket
+import io.vertx.core.http.WebSocketFrame
 import io.vertx.core.json.DecodeException
 import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.core.json.json
@@ -34,6 +36,24 @@ object Chat {
     var vertx: Vertx? = null
 
     var coroutineContext: CoroutineContext = EmptyCoroutineContext
+
+    fun ping(){
+        val logger = LoggerFactory.getLogger(this::class.qualifiedName + "Ping")
+        authedUsers.forEach{ client->
+            client.value.writeFrame(
+                WebSocketFrame.pingFrame(
+                    json {
+                        obj(
+                            "code" to 9,
+                            "msg" to "ping"
+                        )
+                    }.toBuffer()
+                )
+            )
+            logger.info("ping ${client.key}@${client.value.remoteAddress()}")
+        }
+    }
+
     private fun responseError(code: Int, msg: String, socket: ServerWebSocket) {
 
         try {
@@ -350,9 +370,10 @@ object Chat {
     val wsHandler = fun(socket: ServerWebSocket) {
         val logger = LoggerFactory.getLogger(this::class.qualifiedName + ".webSocketHandler")
         var id: Int? = null
-        socket.handler { buffer ->
+
+        val bufferHandler = fun (text : String){
             val req = try {
-                JsonObject(buffer)
+                JsonObject(text)
             } catch (e: DecodeException) {
                 socket.writeTextMessage(json {
                     obj(
@@ -360,7 +381,7 @@ object Chat {
                     )
                 }.encode())
                 logger.info("Unsupported Message From ${socket.remoteAddress()}")
-                return@handler
+                return
             }
 
             val code = try {
@@ -381,7 +402,7 @@ object Chat {
                     } catch (e: Exception) {
                         responseError(500, "服务器内部错误" + e.message, socket)
                         logger.warn("Internal Server Error" + e.message, e)
-                        return@handler
+                        return
                     }
                 }
 
@@ -410,7 +431,21 @@ object Chat {
                     logger.info("Unsupported Message From ${socket.remoteAddress()}")
                 }
             }
+        }
 
+        socket.frameHandler { frame->
+            logger.info(
+                "received" + frame.type())
+            if (frame.isText) {
+                bufferHandler(frame.textData())
+            }
+        }
+
+        socket.closeHandler {
+            if (id != null) {
+                authedUsers.remove(id!!)
+                logger.info("User $id from ${socket.remoteAddress()} Disconnected")
+            }
         }
     }
 }

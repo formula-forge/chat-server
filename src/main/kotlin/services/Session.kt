@@ -186,7 +186,7 @@ object Session {
                     return@launch
                 }
 
-                if (session.hidden!!) {
+                if (session.hidden?:true) {
                     ServerUtility.responseSuccess(routingContext, 200, json {
                         obj(
                             "messages" to JsonArray(), "unread" to 0

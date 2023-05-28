@@ -1,0 +1,26 @@
+port: 8080        # Port for the server to listen on
+host: '0.0.0.0'   # Address for the server to listen on
+
+sms:              # Aliyun SMS service
+  accessKeyId: LTAI5tGg9iA8mWcVZoqYacKt             # Access key ID
+  accessKeySecret: Fxev9oNw3LbLByBUM7P1cLyu85Rl0q   # Access key secret (an example)
+
+img-path: '/var/img'                                # Path to save user-uploaded images
+
+auth:                                               # Key for generating JWT tokens
+  algorithm: HS                                     # Algorithm for generating JWT tokens (HS256)
+  key: "HelloWorldHelloWorldHelloWorldHelloWorldHelloWorldHelloWorldHelloWorldHelloWorld"
+
+database:                                           # Database connection settings (Postgresql)
+  host: '192.168.2.3'                               # Database host
+  port: 5432                                        # Database port
+  user: chatex                                      # Database user
+  database: formula-alchemy                         # Database name
+  password: 6WS+EgWG3wYoffqI                        # Database password (an example)
+
+cors: false                                         # Allow CORS, only support https
+
+jax:                                                # Mathjax parse client settings
+  enable: true                                      # Enable Mathjax parse
+  host: '127.0.0.1'                                 # Mathjax parse client host
+  port: 2023                                        # Mathjax parse client port

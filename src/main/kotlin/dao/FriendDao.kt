@@ -19,6 +19,9 @@ class FriendDao{
             .execute(Tuple.of(user)).await()
         val result = ArrayList<FriendEntity>()
 
+        if (rows.size() == 0)
+            return result
+
         val queryList = StringBuilder()
         queryList.append('(')
 

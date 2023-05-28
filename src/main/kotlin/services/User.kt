@@ -20,10 +20,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
-import utilities.AuthUtility
-import utilities.CheckUtility
-import utilities.MessageUtility
-import utilities.ServerUtility
+import utilities.*
 import utilities.ServerUtility.responseError
 import utilities.ServerUtility.responseSuccess
 import java.text.ParseException
@@ -37,6 +34,7 @@ object User {
     private val friendDao = FriendDao()
 
     var cors = true
+    var jax : JaxUtility? = null
 
     //新增用户 Handler
     @OptIn(DelicateCoroutinesApi::class)
@@ -427,13 +425,17 @@ object User {
                 val token = routingContext.request().getCookie("token")!!
                 val subject = AuthUtility.verifyToken(token.value)!!
                 val me = subject.getInteger("userId")!!
-
+                val svgForula = try {
+                    jax?.transformFav(buff.toJsonObject())
+                } catch (e : Exception){
+                    null
+                }
                 // 获取收藏公式
                 try {
                     userDao.updateElementByConditions(
                         ConnectionPool.getPool(routingContext.vertx()),
                         "id=\$%d",
-                        UserEntity(favFormula = buff.toJsonObject()),
+                        UserEntity(favFormula = svgForula?:buff.toJsonObject()),
                         me
                     )
                     responseSuccess(routingContext, 200, logger = logger)
@@ -589,14 +591,12 @@ object User {
         routingContext.request().bodyHandler { buff ->
             GlobalScope.launch(routingContext.vertx().dispatcher()) {
                 try {
-                    //获取用户id
-                    val id = routingContext.pathParam("id")!!.toInt()
-
+                    routingContext.response().putHeader("content-type", "application/json")
                     //获取手机号和验证码
                     val req = buff.toJsonObject()
 
                     val phone = req.getString("phone")!!
-                    val code = req.getInteger("code")!!
+                    val code = req.getInteger("verifyCode")!!
 
                     val password: String = req.getString("password")!!
 
@@ -609,9 +609,8 @@ object User {
                     //更新密码
                     val count = userDao.updateElementByConditions(
                         ConnectionPool.getPool(routingContext.vertx()),
-                        "id = \$%d AND phone = \$%d",
+                        "phone = \$%d",
                         UserEntity(passWord = BCrypt.hashpw(password, BCrypt.gensalt())),
-                        id,
                         phone
                     )
 
