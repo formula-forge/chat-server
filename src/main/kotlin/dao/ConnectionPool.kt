@@ -17,7 +17,7 @@ object ConnectionPool {
                         .setHost("172.17.182.41")
                         .setDatabase("formula-alchemy")
                         .setUser("chatex")
-                        .setPassword("6WS+EgWG3wYoffqI")
+                        .setPassword("Z2PmAavmuOLqsf05xLF6")
     ) {
         val logger = LoggerFactory.getLogger(this::class.java)
 

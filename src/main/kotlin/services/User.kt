@@ -469,7 +469,7 @@ object User {
                     val userName = req["username"] as String?
                     val phone = req["phone"] as String?
                     val password = req["password"] as String?
-                    val code: Int? = (req["code"] as String?)?.toIntOrNull()
+                    val code: Int? = req["code"] as Int?
 
                     if ((userName == null && phone == null) || (password == null && code == null) || (phone == null && code != null)) {
                         responseError(routingContext, 400, 10, "参数不完整", logger)

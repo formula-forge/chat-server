@@ -212,7 +212,8 @@ class MainVerticle : CoroutineVerticle() {
         mainRouter.get("/api/user").order(5).handler(User.getUser)
         mainRouter.delete("/api/user/:id").order(6).handler(User.delUser)
         mainRouter.delete("/api/user").order(6).handler(User.delUser)
-        mainRouter.patch("/api/user/:id").order(7).handler(User.updUser)
+        mainRouter.patch("/api/user/:id").order(40).handler(User.updUser)
+        mainRouter.patch("/api/user").order(7).handler(User.updUser)
         mainRouter.patch("/api/user/password").order(-15).handler(User.updPassword)
 
         mainRouter.delete("/api/token").order(8).handler(User.logout)

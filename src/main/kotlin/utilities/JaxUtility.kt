@@ -73,4 +73,33 @@ class JaxUtility(vertx: Vertx, port: Int, host: String) {
         socket.close()
         return favFormula
     }
+
+    suspend fun transformFav2(favFormula : JsonObject) : JsonObject{
+        val logger = LoggerFactory.getLogger(this::class.java)
+        logger.info("transform fav formula, host: $host, port: $port")
+        val socket = try {
+            vertx.createNetClient().connect(port, host).await()
+        } catch (e : Exception){
+            logger.error("connect to jax failed", e)
+            return favFormula
+        }
+        logger.info("connect to jax success")
+        try {
+            favFormula.forEach { formulaClass->
+                val formulas = formulaClass.value as JsonArray
+                formulas.forEach { formulaRaw->
+                    val formula = formulaRaw as JsonObject?
+                    if (formula == null )
+                        return@forEach
+                    val content = formula.getString("formula")
+                    formula.put("face",parseFormula(content.replace("{}", "{\\square}"), socket))
+                    formula.put("format", "svg")
+                }
+            }
+        } catch (e : Exception) {
+            logger.error("transform fav formula error", e)
+        }
+        socket.close()
+        return favFormula
+    }
 }
